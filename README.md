@@ -20,7 +20,7 @@ Prebuilt single-container app image on Docker Hub:
 
 ```text
 arxknight/quarterly-points-app:latest
-arxknight/quarterly-points-app:0.1.1
+arxknight/quarterly-points-app:0.1.2
 ```
 
 The app container includes both:
@@ -29,6 +29,19 @@ The app container includes both:
 - FastAPI backend behind `/api`
 
 MySQL remains a separate database service/connection so data can survive app reinstalls and can be hosted externally.
+
+The normal web UI is served by Nginx on container port `80`. If you want to browse on host port `8000`, map host `8000` to container `80`:
+
+```bash
+docker run -d --name quarterly-points-app \
+  -p 8000:80 \
+  -v quarterly_points_app_data:/data \
+  arxknight/quarterly-points-app:latest
+```
+
+FastAPI is also reachable directly on container port `8000` for API debugging, but the UI should normally be accessed through port `80`.
+
+On first boot the logs include Uvicorn's standard `Application startup complete` message. That only means the web server has started; it does **not** mean the app installer has been completed. Check `GET /api/health`: a clean first boot returns `{"ok": true, "installed": false}` until you finish the web installer.
 
 Open the frontend and complete the first-run installer. With the bundled Compose MySQL service, use:
 

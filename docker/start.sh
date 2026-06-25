@@ -2,7 +2,9 @@
 set -eu
 
 cd /app/backend
-uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+# Bind FastAPI to 0.0.0.0 so users who publish 8000:8000 can still reach the API directly.
+# Nginx remains the normal web entrypoint on port 80 and proxies /api to this backend.
+uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 api_pid="$!"
 
 term_handler() {

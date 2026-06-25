@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+import logging
+import sys
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import Base, SessionLocal, configure_engine
@@ -8,6 +10,7 @@ from app.services.auth_service import hash_password
 from app.api.v1 import auth, members, quarters, plans, analytics, install
 
 app=FastAPI(title="Quarterly Points Distribution", version="1.0.0")
+logger = logging.getLogger("quarterly_points.startup")
 app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(install.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
@@ -19,7 +22,13 @@ app.include_router(analytics.router, prefix="/api")
 @app.on_event("startup")
 def startup():
     if not is_installed():
+        message = "First-run installer mode: no /data/config.json or DATABASE_URL found. Open the web UI to configure MySQL and create the admin user."
+        logger.warning(message)
+        print(f"[quarterly-points] {message}", file=sys.stderr, flush=True)
         return
+    message = "Installed mode: saved database configuration found; initialising database models if needed."
+    logger.info(message)
+    print(f"[quarterly-points] {message}", file=sys.stderr, flush=True)
     engine = configure_engine()
     if engine is None:
         return
