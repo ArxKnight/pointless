@@ -2,7 +2,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import DepartmentMember, GivingPlan, PointsLedger, Quarter, User
+from app.models import DepartmentMember, GivingPlan, PointsLedger, Quarter, Team, TeamGroup, User
 from app.schemas.api import GenerateIn, QuarterOut
 from app.services.auth_service import get_current_user, require_admin
 from app.services.member_sync import sync_active_users_to_members
@@ -59,6 +59,89 @@ def get_active(db: Session = Depends(get_db), user: User = Depends(get_current_u
         "plans": plan_rows(db, q.id),
         "members": [{"id": m.id, "display_name": m.display_name} for m in members],
     }
+
+
+def overview_tree_payload(db: Session, q: Quarter | None):
+    active_groups = db.query(TeamGroup).filter(TeamGroup.is_active == True).order_by(TeamGroup.display_order, TeamGroup.name).all()  # noqa: E712
+    active_teams = db.query(Team).filter(Team.is_active == True).order_by(Team.display_order, Team.name).all()  # noqa: E712
+    users_by_email = {u.email.lower(): u for u in db.query(User).all()}
+    members = db.query(DepartmentMember).filter(DepartmentMember.active == True).order_by(DepartmentMember.display_name).all()  # noqa: E712
+    plans = db.query(GivingPlan).filter(GivingPlan.quarter_id == q.id).all() if q else []
+    sent = {m.id: 0 for m in members}
+    received = {m.id: 0 for m in members}
+    recipients = {m.id: set() for m in members}
+    sources = {m.id: set() for m in members}
+    for p in plans:
+        sent[p.from_member_id] = sent.get(p.from_member_id, 0) + p.amount
+        received[p.to_member_id] = received.get(p.to_member_id, 0) + p.amount
+        recipients.setdefault(p.from_member_id, set()).add(p.to_member_id)
+        sources.setdefault(p.to_member_id, set()).add(p.from_member_id)
+    return {
+        "quarter": QuarterOut.model_validate(q) if q else None,
+        "team_groups": [
+            {"id": g.id, "name": g.name, "description": g.description, "display_order": g.display_order, "is_active": g.is_active}
+            for g in active_groups
+        ],
+        "teams": [
+            {
+                "id": t.id,
+                "name": t.name,
+                "description": t.description,
+                "colour": t.colour,
+                "display_order": t.display_order,
+                "is_active": t.is_active,
+                "group_id": t.group_id if t.group and t.group.is_active else None,
+                "group_name": t.group.name if t.group and t.group.is_active else None,
+            }
+            for t in active_teams
+        ],
+        "users": [
+            {
+                "member_id": m.id,
+                "user_id": users_by_email.get(m.email.lower()).id if users_by_email.get(m.email.lower()) else None,
+                "display_name": users_by_email.get(m.email.lower()).display_name if users_by_email.get(m.email.lower()) else m.display_name,
+                "email": m.email,
+                "team_id": users_by_email.get(m.email.lower()).team_id if users_by_email.get(m.email.lower()) and users_by_email.get(m.email.lower()).team and users_by_email.get(m.email.lower()).team.is_active else None,
+                "team_name": users_by_email.get(m.email.lower()).team.name if users_by_email.get(m.email.lower()) and users_by_email.get(m.email.lower()).team and users_by_email.get(m.email.lower()).team.is_active else None,
+                "team_colour": users_by_email.get(m.email.lower()).team.colour if users_by_email.get(m.email.lower()) and users_by_email.get(m.email.lower()).team and users_by_email.get(m.email.lower()).team.is_active else None,
+                "team_group_id": users_by_email.get(m.email.lower()).team.group_id if users_by_email.get(m.email.lower()) and users_by_email.get(m.email.lower()).team and users_by_email.get(m.email.lower()).team.is_active and users_by_email.get(m.email.lower()).team.group and users_by_email.get(m.email.lower()).team.group.is_active else None,
+                "team_group_name": users_by_email.get(m.email.lower()).team.group.name if users_by_email.get(m.email.lower()) and users_by_email.get(m.email.lower()).team and users_by_email.get(m.email.lower()).team.is_active and users_by_email.get(m.email.lower()).team.group and users_by_email.get(m.email.lower()).team.group.is_active else None,
+                "total_points_sent": sent.get(m.id, 0),
+                "total_points_received": received.get(m.id, 0),
+                "recipient_count": len(recipients.get(m.id, set())),
+                "incoming_allocation_count": len(sources.get(m.id, set())),
+            }
+            for m in members
+        ],
+        "allocations": [
+            {
+                "allocation_id": p.id,
+                "quarter_id": p.quarter_id,
+                "quarter": p.quarter.label,
+                "source_member_id": p.from_member_id,
+                "recipient_member_id": p.to_member_id,
+                "source_user_id": users_by_email.get(p.from_member.email.lower()).id if users_by_email.get(p.from_member.email.lower()) else None,
+                "recipient_user_id": users_by_email.get(p.to_member.email.lower()).id if users_by_email.get(p.to_member.email.lower()) else None,
+                "source_name": p.from_member.display_name,
+                "recipient_name": p.to_member.display_name,
+                "points": p.amount,
+                "acknowledged": p.acknowledged,
+                "allocation_date": p.quarter.generated_at,
+            }
+            for p in plans
+        ],
+    }
+
+
+@router.get("/active/overview-tree")
+def active_overview_tree(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    q = (
+        db.query(Quarter)
+        .filter(Quarter.is_active == True, Quarter.is_completed == False)  # noqa: E712
+        .order_by(Quarter.id.desc())
+        .first()
+    )
+    return overview_tree_payload(db, q)
 
 
 @router.post("/regenerate")

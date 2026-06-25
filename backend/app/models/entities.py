@@ -1,7 +1,35 @@
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
+
+
+class TeamGroup(Base):
+    __tablename__ = "team_groups"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    teams: Mapped[list["Team"]] = relationship("Team", back_populates="group", foreign_keys="Team.group_id")
+
+
+class Team(Base):
+    __tablename__ = "teams"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    colour: Mapped[str] = mapped_column(String(20), default="#6366f1")
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("team_groups.id", ondelete="SET NULL"), nullable=True, index=True)
+    group: Mapped["TeamGroup | None"] = relationship("TeamGroup", back_populates="teams", foreign_keys=[group_id])
+    members: Mapped[list["User"]] = relationship("User", back_populates="team", foreign_keys="User.team_id")
+
 
 class User(Base):
     __tablename__ = "users"
@@ -13,6 +41,9 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True)
+    team: Mapped["Team | None"] = relationship("Team", back_populates="members", foreign_keys=[team_id])
+
 
 class DepartmentMember(Base):
     __tablename__ = "department_members"
@@ -22,6 +53,7 @@ class DepartmentMember(Base):
     added_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
 
 class Quarter(Base):
     __tablename__ = "quarters"
@@ -34,6 +66,7 @@ class Quarter(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
 
+
 class GivingPlan(Base):
     __tablename__ = "giving_plans"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -45,6 +78,7 @@ class GivingPlan(Base):
     quarter = relationship("Quarter")
     from_member = relationship("DepartmentMember", foreign_keys=[from_member_id])
     to_member = relationship("DepartmentMember", foreign_keys=[to_member_id])
+
 
 class PointsLedger(Base):
     __tablename__ = "points_ledger"

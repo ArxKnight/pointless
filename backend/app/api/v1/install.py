@@ -9,6 +9,8 @@ from app.schemas.api import InstallDatabaseIn, InstallIn
 from app.services.auth_service import hash_password
 from app.services.member_sync import sync_active_users_to_members
 from app.services.quarter_service import auto_generate_quarter
+from app.services.schema_upgrade import ensure_team_schema
+from app.services.team_seed import ensure_initial_team_data
 
 router = APIRouter(prefix="/install", tags=["install"])
 REQUIRED_TABLES = ["users", "department_members", "quarters", "giving_plans", "points_ledger"]
@@ -115,6 +117,7 @@ def setup(data: InstallIn):
     engine = configure_engine(force=True)
     try:
         Base.metadata.create_all(bind=engine)
+        ensure_team_schema(engine)
         with engine.begin() as connection:
             connection.execute(text("SELECT 1"))
         session = SessionLocal()
@@ -146,6 +149,7 @@ def setup(data: InstallIn):
                     )
                     session.add(admin)
                 session.commit()
+            ensure_initial_team_data(session)
             sync_active_users_to_members(session)
             session.commit()
             auto_generate_quarter(session)

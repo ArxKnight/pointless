@@ -1,6 +1,11 @@
-export type User={id:number;username:string;display_name:string;email:string;is_admin:boolean};
-export type UserAdmin={id:number;username:string;display_name:string;email:string;is_admin:boolean;is_active:boolean;created_at:string};
+export type Team={id:number;name:string;description?:string|null;colour:string;display_order:number;is_active:boolean;group_id?:number|null;group_name?:string|null;created_at?:string;updated_at?:string;user_count?:number};
+export type TeamGroup={id:number;name:string;description?:string|null;display_order:number;is_active:boolean;created_at?:string;updated_at?:string;team_count?:number;user_count?:number;teams?:Team[]};
+export type User={id:number;username:string;display_name:string;email:string;is_admin:boolean;team_id?:number|null};
+export type UserAdmin={id:number;username:string;display_name:string;email:string;is_admin:boolean;is_active:boolean;created_at:string;team_id?:number|null;team_name?:string|null};
 export type Member={id:number;display_name:string;email:string;active:boolean;created_at:string};
 export type Quarter={id:number;year:number;quarter:number;label:string;generated_at:string;is_active:boolean;is_completed:boolean};
 export type Plan={id:number;quarter_id:number;from_member_id:number;to_member_id:number;from_name:string;to_name:string;amount:number;acknowledged:boolean};
 export type MyPlan={quarter:null|{id:number;label:string};member?:{id:number;display_name:string};outgoing:Plan[];incoming:Plan[]};
+export type OverviewTreeUser={member_id:number;user_id:number|null;display_name:string;email:string;team_id:number|null;team_name:string|null;team_colour:string|null;team_group_id:number|null;team_group_name:string|null;total_points_sent:number;total_points_received:number;recipient_count:number;incoming_allocation_count:number};
+export type OverviewTreeAllocation={allocation_id:number;quarter_id:number;quarter:string;source_member_id:number;recipient_member_id:number;source_user_id:number|null;recipient_user_id:number|null;source_name:string;recipient_name:string;points:number;acknowledged:boolean;allocation_date:string};
+export type OverviewTreeData={quarter:Quarter|null;team_groups:TeamGroup[];teams:Team[];users:OverviewTreeUser[];allocations:OverviewTreeAllocation[]};

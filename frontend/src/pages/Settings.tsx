@@ -1,192 +1,64 @@
-import {useEffect,useState} from 'react';import {User,UserAdmin,Member} from '../types/api';import {api,patch,post} from '../lib/api';
+import {useEffect,useMemo,useState} from 'react';import {User,UserAdmin,Member,Team,TeamGroup} from '../types/api';import {api,del,patch,post} from '../lib/api';
+
+type TeamForm={name:string;description:string;colour:string;display_order:number;is_active:boolean;group_id:number|''};
+type GroupForm={name:string;description:string;display_order:number;is_active:boolean};
+const emptyTeam:TeamForm={name:'',description:'',colour:'#6366f1',display_order:0,is_active:true,group_id:''};
+const emptyGroup:GroupForm={name:'',description:'',display_order:0,is_active:true};
+function toTeamForm(t:Team):TeamForm{return{name:t.name,description:t.description||'',colour:t.colour,display_order:t.display_order,is_active:t.is_active,group_id:t.group_id??''}}
+function toGroupForm(g:TeamGroup):GroupForm{return{name:g.name,description:g.description||'',display_order:g.display_order,is_active:g.is_active}}
+function teamPayload(f:TeamForm){return{name:f.name.trim(),description:f.description.trim()||null,colour:f.colour,display_order:Number(f.display_order)||0,is_active:f.is_active,group_id:f.group_id===''?null:Number(f.group_id)}}
+function groupPayload(f:GroupForm){return{name:f.name.trim(),description:f.description.trim()||null,display_order:Number(f.display_order)||0,is_active:f.is_active}}
 
 export function Settings({user}:{user:User}){
   const [regen,setRegen]=useState<'idle'|'loading'|'done'|'error'>('idle');
   const [regenMsg,setRegenMsg]=useState('');
   const [users,setUsers]=useState<UserAdmin[]>([]);
   const [members,setMembers]=useState<Member[]>([]);
-  const [memberForm,setMemberForm]=useState({display_name:'',email:'',password:''});
+  const [teams,setTeams]=useState<Team[]>([]);
+  const [groups,setGroups]=useState<TeamGroup[]>([]);
+  const [unassigned,setUnassigned]=useState<UserAdmin[]>([]);
+  const [memberForm,setMemberForm]=useState({display_name:'',email:'',password:'',team_id:''});
+  const [teamForm,setTeamForm]=useState<TeamForm>(emptyTeam);
+  const [groupForm,setGroupForm]=useState<GroupForm>(emptyGroup);
+  const [editingTeam,setEditingTeam]=useState<number|null>(null);
+  const [editingGroup,setEditingGroup]=useState<number|null>(null);
+  const [message,setMessage]=useState('');
   const [roleLoading,setRoleLoading]=useState<number|null>(null);
   const [memberLoading,setMemberLoading]=useState<number|null>(null);
 
+  const activeTeams=useMemo(()=>teams.filter(t=>t.is_active),[teams]);
   const loadUsers=()=>api<UserAdmin[]>('/users').then(setUsers).catch(()=>{});
   const loadMembers=()=>api<Member[]>('/members').then(setMembers).catch(()=>{});
+  const loadTeams=()=>api<Team[]>('/teams?include_inactive=true').then(setTeams).catch(()=>{});
+  const loadGroups=()=>api<TeamGroup[]>('/teams/groups/?include_inactive=true').then(setGroups).catch(()=>{});
+  const loadUnassigned=()=>api<UserAdmin[]>('/teams/unassigned-users').then(setUnassigned).catch(()=>{});
+  const loadAll=()=>{void loadUsers();void loadMembers();void loadTeams();void loadGroups();void loadUnassigned();};
 
-  useEffect(()=>{if(user.is_admin){void loadUsers();void loadMembers()}},[user.is_admin]);
+  useEffect(()=>{if(user.is_admin)loadAll()},[user.is_admin]);
 
-  async function handleSetRole(u:UserAdmin,makeAdmin:boolean){
-    setRoleLoading(u.id);
-    try{const updated=await patch<UserAdmin>(`/users/${u.id}/role`,{is_admin:makeAdmin});setUsers(prev=>prev.map(x=>x.id===updated.id?updated:x));}
-    catch{}
-    setRoleLoading(null);
-  }
+  async function handleSetRole(u:UserAdmin,makeAdmin:boolean){setRoleLoading(u.id);try{const updated=await patch<UserAdmin>(`/users/${u.id}/role`,{is_admin:makeAdmin});setUsers(prev=>prev.map(x=>x.id===updated.id?updated:x));}catch(e:any){setMessage(e.message||'Role update failed')}setRoleLoading(null)}
+  async function handleSetTeam(u:UserAdmin,teamId:string){try{const updated=await patch<UserAdmin>(`/users/${u.id}/team`,{team_id:teamId===''?null:Number(teamId)});setUsers(prev=>prev.map(x=>x.id===updated.id?updated:x));void loadUnassigned();}catch(e:any){setMessage(e.message||'Team update failed')}}
+  async function handleToggleMember(m:Member){setMemberLoading(m.id);try{const updated=await patch<Member>(`/members/${m.id}`,{active:!m.active});setMembers(prev=>prev.map(x=>x.id===updated.id?updated:x));}catch(e:any){setMessage(e.message||'Member update failed')}setMemberLoading(null)}
+  async function handleAddMember(e:React.FormEvent){e.preventDefault();const username=memberForm.display_name.toLowerCase().replace(/\s+/g,'_');await post('/members',{display_name:memberForm.display_name,email:memberForm.email,password:memberForm.password,username,team_id:memberForm.team_id===''?null:Number(memberForm.team_id)});setMemberForm({display_name:'',email:'',password:'',team_id:''});loadAll()}
+  async function handleSaveTeam(e:React.FormEvent){e.preventDefault();try{if(editingTeam){await patch<Team>(`/teams/${editingTeam}`,teamPayload(teamForm));setMessage('Team updated.')}else{await post<Team>('/teams',teamPayload(teamForm));setMessage('Team created.')}setTeamForm(emptyTeam);setEditingTeam(null);loadAll();}catch(e:any){setMessage(e.message||'Team save failed')}}
+  async function handleSaveGroup(e:React.FormEvent){e.preventDefault();try{if(editingGroup){await patch<TeamGroup>(`/teams/groups/${editingGroup}`,groupPayload(groupForm));setMessage('Team group updated.')}else{await post<TeamGroup>('/teams/groups/',groupPayload(groupForm));setMessage('Team group created.')}setGroupForm(emptyGroup);setEditingGroup(null);loadAll();}catch(e:any){setMessage(e.message||'Group save failed')}}
+  async function handleDeleteTeam(t:Team){const count=t.user_count??users.filter(u=>u.team_id===t.id).length;const move=prompt(`Delete/deactivate ${t.name}?\n\n${count} user(s) are assigned. Users remain in the app.\nEnter another active team ID to move them, leave blank to make them unassigned, or press Cancel to stop.`);if(move===null)return;try{await del<Team>(`/teams/${t.id}`,{move_users_to_team_id:move.trim()===''?null:Number(move)});setMessage('Team deactivated.');loadAll();}catch(e:any){setMessage(e.message||'Team delete failed')}}
+  async function handleDeleteGroup(g:TeamGroup){if(!confirm(`Delete/deactivate group ${g.name}? Teams in it will become ungrouped; users and points are kept.`))return;try{await del<TeamGroup>(`/teams/groups/${g.id}`);setMessage('Team group deactivated.');loadAll();}catch(e:any){setMessage(e.message||'Group delete failed')}}
+  async function handleRegenerate(force:boolean){const msg=force?'This will clear ALL sent marks AND regenerate all assignments for the current quarter. This cannot be undone. Continue?':'This will delete and regenerate all giving assignments for the current quarter. Any points already marked as sent will block this action. Continue?';if(!confirm(msg))return;setRegen('loading');setRegenMsg('');try{const url=force?'/quarters/regenerate?force=true':'/quarters/regenerate';const res=await post<{quarter:{label:string};plans:unknown[]}>(url);setRegenMsg(`Done — ${res.quarter.label} regenerated with ${(res.plans as unknown[]).length} new assignments.`);setRegen('done');}catch(e:any){setRegenMsg(e.message||'Regeneration failed.');setRegen('error')}}
 
-  async function handleToggleMember(m:Member){
-    setMemberLoading(m.id);
-    try{const updated=await patch<Member>(`/members/${m.id}`,{active:!m.active});setMembers(prev=>prev.map(x=>x.id===updated.id?updated:x));}
-    catch{}
-    setMemberLoading(null);
-  }
-
-  async function handleAddMember(e:React.FormEvent){
-    e.preventDefault();
-    // display_name is used as the username too — derive it as lowercase, no spaces
-    const username=memberForm.display_name.toLowerCase().replace(/\s+/g,'_');
-    await post('/members',{...memberForm,username});
-    setMemberForm({display_name:'',email:'',password:''});
-    void loadMembers();void loadUsers();
-  }
-
-  async function handleRegenerate(force:boolean){
-    const msg=force
-      ? 'This will clear ALL sent marks AND regenerate all assignments for the current quarter. This cannot be undone. Continue?'
-      : 'This will delete and regenerate all giving assignments for the current quarter. Any points already marked as sent will block this action. Continue?';
-    if(!confirm(msg))return;
-    setRegen('loading');setRegenMsg('');
-    try{
-      const url=force?'/quarters/regenerate?force=true':'/quarters/regenerate';
-      const res=await post<{quarter:{label:string};plans:unknown[]}>(url);
-      setRegenMsg(`Done — ${res.quarter.label} regenerated with ${(res.plans as unknown[]).length} new assignments.`);
-      setRegen('done');
-    }catch(e:any){setRegenMsg(e.message||'Regeneration failed.');setRegen('error');}
-  }
-
-  return(
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold">Settings</h1>
-        <p className="mt-1 text-slate-400">Account and system settings.</p>
+  return(<div className="space-y-6"><div><h1 className="text-3xl font-semibold">Settings</h1><p className="mt-1 text-slate-400">Account, roles, teams and system settings.</p></div>
+    <div className="card p-6 space-y-3"><h2 className="text-lg font-semibold">Your Account</h2><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm"><div><p className="text-slate-400">Display Name</p><p className="mt-0.5 font-medium">{user.display_name}</p></div><div><p className="text-slate-400">Username</p><p className="mt-0.5 font-medium">{user.username}</p></div><div><p className="text-slate-400">Email</p><p className="mt-0.5 font-medium">{user.email}</p></div><div><p className="text-slate-400">Role</p><p className="mt-0.5 font-medium">{user.is_admin?'Administrator':'Member'}</p></div></div></div>
+    {message&&<div className="card p-4 text-sm text-slate-200">{message}</div>}
+    {user.is_admin&&(<>
+      <div className="card p-6 space-y-6 border border-indigo-500/20"><div><h2 className="text-lg font-semibold">User Roles</h2><p className="mt-1 text-sm text-slate-400">Manage roles and team assignment separately. Role changes affect permissions; team changes only affect Overview Tree grouping.</p></div>
+        <div className="space-y-2"><h3 className="font-semibold">Team Management</h3><form onSubmit={handleSaveTeam} className="grid gap-3 md:grid-cols-7"><input required placeholder="Team name" value={teamForm.name} onChange={e=>setTeamForm({...teamForm,name:e.target.value})} className="rounded bg-bg p-2 text-sm"/><select value={teamForm.group_id} onChange={e=>setTeamForm({...teamForm,group_id:e.target.value as any})} className="rounded bg-bg p-2 text-sm"><option value="">No group / independent</option>{groups.filter(g=>g.is_active).map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select><input type="color" value={teamForm.colour} onChange={e=>setTeamForm({...teamForm,colour:e.target.value})} className="h-10 rounded bg-bg p-1"/><input type="number" placeholder="Order" value={teamForm.display_order} onChange={e=>setTeamForm({...teamForm,display_order:Number(e.target.value)})} className="rounded bg-bg p-2 text-sm"/><input placeholder="Description" value={teamForm.description} onChange={e=>setTeamForm({...teamForm,description:e.target.value})} className="rounded bg-bg p-2 text-sm md:col-span-2"/><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={teamForm.is_active} onChange={e=>setTeamForm({...teamForm,is_active:e.target.checked})}/>Active</label><button className="rounded bg-indigo-500 px-4 py-2 text-sm font-semibold hover:bg-indigo-400">{editingTeam?'Save Team':'Add Team'}</button>{editingTeam&&<button type="button" onClick={()=>{setEditingTeam(null);setTeamForm(emptyTeam)}} className="rounded border border-border px-4 py-2 text-sm">Cancel</button>}</form>
+        <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-black/20 text-left text-slate-400"><tr><th className="p-3">Team name</th><th>Team group</th><th>Users</th><th>Visual</th><th>Active</th><th>Order</th><th>Actions</th></tr></thead><tbody>{teams.map(t=><tr key={t.id} className="border-t border-border"><td className="p-3 font-medium">{t.name}</td><td>{t.group_name||'Independent'}</td><td>{t.user_count??0}</td><td><span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full" style={{background:t.colour}}/>{t.colour}</span></td><td>{t.is_active?'Active':'Inactive'}</td><td>{t.display_order}</td><td className="space-x-2 py-2"><button onClick={()=>{setEditingTeam(t.id);setTeamForm(toTeamForm(t))}} className="rounded border border-border px-2 py-1 text-xs">Edit</button><button onClick={()=>handleDeleteTeam(t)} className="rounded border border-red-500/40 px-2 py-1 text-xs text-red-300">Delete</button></td></tr>)}</tbody></table></div></div>
+        <div className="space-y-2"><h3 className="font-semibold">Team Groups</h3><form onSubmit={handleSaveGroup} className="grid gap-3 md:grid-cols-5"><input required placeholder="Group name" value={groupForm.name} onChange={e=>setGroupForm({...groupForm,name:e.target.value})} className="rounded bg-bg p-2 text-sm"/><input placeholder="Description" value={groupForm.description} onChange={e=>setGroupForm({...groupForm,description:e.target.value})} className="rounded bg-bg p-2 text-sm md:col-span-2"/><input type="number" placeholder="Order" value={groupForm.display_order} onChange={e=>setGroupForm({...groupForm,display_order:Number(e.target.value)})} className="rounded bg-bg p-2 text-sm"/><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={groupForm.is_active} onChange={e=>setGroupForm({...groupForm,is_active:e.target.checked})}/>Active</label><button className="rounded bg-indigo-500 px-4 py-2 text-sm font-semibold hover:bg-indigo-400">{editingGroup?'Save Group':'Add Group'}</button>{editingGroup&&<button type="button" onClick={()=>{setEditingGroup(null);setGroupForm(emptyGroup)}} className="rounded border border-border px-4 py-2 text-sm">Cancel</button>}</form>
+        <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-black/20 text-left text-slate-400"><tr><th className="p-3">Group name</th><th>Teams in group</th><th>Users</th><th>Order</th><th>Active</th><th>Actions</th></tr></thead><tbody>{groups.map(g=><tr key={g.id} className="border-t border-border"><td className="p-3 font-medium">{g.name}</td><td>{(g.teams||[]).map(t=>t.name).join(', ')||'No teams'}</td><td>{g.user_count??0}</td><td>{g.display_order}</td><td>{g.is_active?'Active':'Inactive'}</td><td className="space-x-2 py-2"><button onClick={()=>{setEditingGroup(g.id);setGroupForm(toGroupForm(g))}} className="rounded border border-border px-2 py-1 text-xs">Edit</button><button onClick={()=>handleDeleteGroup(g)} className="rounded border border-red-500/40 px-2 py-1 text-xs text-red-300">Delete</button></td></tr>)}</tbody></table></div></div>
+        <div className="overflow-x-auto"><h3 className="mb-2 font-semibold">Users, roles and team assignment</h3><table className="w-full text-sm"><thead className="bg-black/20 text-left text-slate-400"><tr><th className="p-3">User</th><th>Username</th><th>Email</th><th>Role</th><th>Team</th><th>Account</th><th></th></tr></thead><tbody>{users.map(u=><tr className="border-t border-border" key={u.id}><td className="p-3">{u.display_name}</td><td>{u.username}</td><td>{u.email}</td><td><span className={`inline-block rounded-full px-2 py-0.5 text-xs ${u.is_admin?'bg-indigo-500/20 text-indigo-300':'bg-slate-700 text-slate-300'}`}>{u.is_admin?'Admin':'User'}</span></td><td><select value={u.team_id??''} onChange={e=>handleSetTeam(u,e.target.value)} className="rounded bg-bg p-2 text-sm"><option value="">No team / Unassigned</option>{activeTeams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></td><td>{u.is_active?'Active':'Inactive'}</td><td className="py-2 pr-3 text-right">{u.id!==user.id&&<button onClick={()=>handleSetRole(u,!u.is_admin)} disabled={roleLoading===u.id} className="rounded border border-border px-3 py-1 text-xs hover:bg-white/5 disabled:opacity-50">{roleLoading===u.id?'Saving…':u.is_admin?'Make User':'Make Admin'}</button>}</td></tr>)}{users.length===0&&<tr><td colSpan={7} className="p-4 text-center text-slate-500">No users found.</td></tr>}</tbody></table><p className="mt-3 text-xs text-slate-400">Unassigned users: {unassigned.map(u=>u.display_name).join(', ')||'none'}</p></div>
       </div>
-
-      {/* Account info */}
-      <div className="card p-6 space-y-3">
-        <h2 className="text-lg font-semibold">Your Account</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
-          <div><p className="text-slate-400">Display Name</p><p className="mt-0.5 font-medium">{user.display_name}</p></div>
-          <div><p className="text-slate-400">Username</p><p className="mt-0.5 font-medium">{user.username}</p></div>
-          <div><p className="text-slate-400">Email</p><p className="mt-0.5 font-medium">{user.email}</p></div>
-          <div><p className="text-slate-400">Role</p><p className="mt-0.5 font-medium">{user.is_admin?'🔑 Administrator':'Member'}</p></div>
-        </div>
-      </div>
-
-      {/* Admin-only sections */}
-      {user.is_admin&&(<>
-
-        {/* User roles */}
-        <div className="card p-6 space-y-4 border border-indigo-500/20">
-          <div>
-            <h2 className="text-lg font-semibold">User Roles</h2>
-            <p className="mt-1 text-sm text-slate-400">Promote or demote users between Admin and User. You cannot change your own role.</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-black/20 text-left text-slate-400">
-                <tr><th className="p-3">Name</th><th>Username</th><th>Email</th><th>Role</th><th></th></tr>
-              </thead>
-              <tbody>
-                {users.map(u=>(
-                  <tr className="border-t border-border" key={u.id}>
-                    <td className="p-3">{u.display_name}</td>
-                    <td className="text-slate-300">{u.username}</td>
-                    <td className="text-slate-300">{u.email}</td>
-                    <td>
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${u.is_admin?'bg-indigo-500/20 text-indigo-300':'bg-slate-700 text-slate-300'}`}>
-                        {u.is_admin?'Admin':'User'}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-3 text-right">
-                      {u.id!==user.id&&(
-                        <button
-                          onClick={()=>handleSetRole(u,!u.is_admin)}
-                          disabled={roleLoading===u.id}
-                          className="rounded border border-border px-3 py-1 text-xs hover:bg-white/5 disabled:opacity-50"
-                        >
-                          {roleLoading===u.id?'Saving…':u.is_admin?'Make User':'Make Admin'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {users.length===0&&<tr><td colSpan={5} className="p-4 text-center text-slate-500">No users found.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Members */}
-        <div className="card p-6 space-y-4 border border-teal-500/20">
-          <div>
-            <h2 className="text-lg font-semibold">Department Members</h2>
-            <p className="mt-1 text-sm text-slate-400">Add members and toggle their active status. Adding a password also creates a login account — the username is derived automatically from the display name.</p>
-          </div>
-          <form onSubmit={handleAddMember} className="grid gap-3 sm:grid-cols-4">
-            <input required placeholder="Display Name (Username)" value={memberForm.display_name} onChange={e=>setMemberForm({...memberForm,display_name:e.target.value})} className="rounded bg-bg p-3 text-sm"/>
-            <input required placeholder="Email" type="email" value={memberForm.email} onChange={e=>setMemberForm({...memberForm,email:e.target.value})} className="rounded bg-bg p-3 text-sm"/>
-            <input type="password" placeholder="Password (optional)" value={memberForm.password} onChange={e=>setMemberForm({...memberForm,password:e.target.value})} className="rounded bg-bg p-3 text-sm"/>
-            <button type="submit" className="rounded bg-indigo-500 px-4 py-3 text-sm font-semibold hover:bg-indigo-400">Add Member</button>
-          </form>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-black/20 text-left text-slate-400">
-                <tr><th className="p-3">Name</th><th>Email</th><th>Status</th><th></th></tr>
-              </thead>
-              <tbody>
-                {members.map(m=>(
-                  <tr className="border-t border-border" key={m.id}>
-                    <td className="p-3">{m.display_name}</td>
-                    <td className="text-slate-300">{m.email}</td>
-                    <td>
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${m.active?'bg-green-500/20 text-green-300':'bg-red-500/20 text-red-300'}`}>
-                        {m.active?'Active':'Inactive'}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-3 text-right">
-                      <button
-                        onClick={()=>handleToggleMember(m)}
-                        disabled={memberLoading===m.id}
-                        className="rounded border border-border px-3 py-1 text-xs hover:bg-white/5 disabled:opacity-50"
-                      >
-                        {memberLoading===m.id?'Saving…':m.active?'Deactivate':'Activate'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {members.length===0&&<tr><td colSpan={4} className="p-4 text-center text-slate-500">No members yet.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Regenerate quarter */}
-        <div className="card p-6 space-y-4 border border-yellow-500/20">
-          <div>
-            <h2 className="text-lg font-semibold">Regenerate Current Quarter</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Rebuilds the quarter's giving assignments — useful after members are added or removed.
-              Use <span className="text-yellow-300 font-medium">Regenerate</span> normally (blocked if any sends have been marked).
-              Use <span className="text-red-400 font-medium">Force Regenerate</span> to override and clear all sent marks too.
-            </p>
-          </div>
-          {regenMsg&&(<p className={`rounded-lg p-3 text-sm ${regen==='error'?'bg-red-500/10 text-red-400':'bg-green-500/10 text-green-400'}`}>{regenMsg}</p>)}
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={()=>handleRegenerate(false)}
-              disabled={regen==='loading'}
-              className="rounded-xl bg-yellow-500 px-5 py-2.5 text-sm font-semibold text-black hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              {regen==='loading'?'Regenerating…':'⟳ Regenerate Quarter'}
-            </button>
-            <button
-              onClick={()=>handleRegenerate(true)}
-              disabled={regen==='loading'}
-              className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              {regen==='loading'?'Regenerating…':'⚠ Force Regenerate'}
-            </button>
-          </div>
-        </div>
-
-      </>)}
-    </div>
-  );
+      <div className="card p-6 space-y-4 border border-teal-500/20"><div><h2 className="text-lg font-semibold">Department Members</h2><p className="mt-1 text-sm text-slate-400">Add members and optionally assign the new login user to an existing team.</p></div><form onSubmit={handleAddMember} className="grid gap-3 sm:grid-cols-5"><input required placeholder="Display Name (Username)" value={memberForm.display_name} onChange={e=>setMemberForm({...memberForm,display_name:e.target.value})} className="rounded bg-bg p-3 text-sm"/><input required placeholder="Email" type="email" value={memberForm.email} onChange={e=>setMemberForm({...memberForm,email:e.target.value})} className="rounded bg-bg p-3 text-sm"/><input type="password" placeholder="Password (optional)" value={memberForm.password} onChange={e=>setMemberForm({...memberForm,password:e.target.value})} className="rounded bg-bg p-3 text-sm"/><select value={memberForm.team_id} onChange={e=>setMemberForm({...memberForm,team_id:e.target.value})} className="rounded bg-bg p-3 text-sm"><option value="">No team</option>{activeTeams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select><button type="submit" className="rounded bg-indigo-500 px-4 py-3 text-sm font-semibold hover:bg-indigo-400">Add Member</button></form><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-black/20 text-left text-slate-400"><tr><th className="p-3">Name</th><th>Email</th><th>Status</th><th></th></tr></thead><tbody>{members.map(m=><tr className="border-t border-border" key={m.id}><td className="p-3">{m.display_name}</td><td>{m.email}</td><td>{m.active?'Active':'Inactive'}</td><td className="py-2 pr-3 text-right"><button onClick={()=>handleToggleMember(m)} disabled={memberLoading===m.id} className="rounded border border-border px-3 py-1 text-xs hover:bg-white/5 disabled:opacity-50">{memberLoading===m.id?'Saving…':m.active?'Deactivate':'Activate'}</button></td></tr>)}{members.length===0&&<tr><td colSpan={4} className="p-4 text-center text-slate-500">No members yet.</td></tr>}</tbody></table></div></div>
+      <div className="card p-6 space-y-4 border border-yellow-500/20"><div><h2 className="text-lg font-semibold">Regenerate Current Quarter</h2><p className="mt-1 text-sm text-slate-400">Rebuilds the quarter's giving assignments — useful after members are added or removed.</p></div>{regenMsg&&<p className={`rounded-lg p-3 text-sm ${regen==='error'?'bg-red-500/10 text-red-400':'bg-green-500/10 text-green-400'}`}>{regenMsg}</p>}<div className="flex flex-wrap gap-3"><button onClick={()=>handleRegenerate(false)} disabled={regen==='loading'} className="rounded-xl bg-yellow-500 px-5 py-2.5 text-sm font-semibold text-black hover:bg-yellow-400 disabled:opacity-50">{regen==='loading'?'Regenerating…':'Regenerate Quarter'}</button><button onClick={()=>handleRegenerate(true)} disabled={regen==='loading'} className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50">{regen==='loading'?'Regenerating…':'Force Regenerate'}</button></div></div>
+    </>)}
+  </div>);
 }

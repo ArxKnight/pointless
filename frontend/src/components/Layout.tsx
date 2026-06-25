@@ -9,7 +9,7 @@ export function Layout({user,setUser}:{user:User;setUser:(u:null)=>void}){
   const links:[string,string][]=[
     ['/','◈ Dashboard'],
     ['/tree','🌳 My Giving Tree'],
-    ['/overview','🌐 Overview'],
+    ['/overview','🌐 Overview Tree'],
     ['/history','🕐 History'],
     ...(user.is_admin?[['/quarters','⚙️ Quarters']] as [string,string][]:[]),
     ['/settings','⚙️ Settings'],
