@@ -7,6 +7,7 @@ from app.models import User
 from app.runtime_config import install_status, is_installed, save_install_config
 from app.schemas.api import InstallDatabaseIn, InstallIn
 from app.services.auth_service import hash_password
+from app.services.member_sync import sync_active_users_to_members
 
 router = APIRouter(prefix="/install", tags=["install"])
 REQUIRED_TABLES = ["users", "department_members", "quarters", "giving_plans", "points_ledger"]
@@ -144,6 +145,8 @@ def setup(data: InstallIn):
                     )
                     session.add(admin)
                 session.commit()
+            sync_active_users_to_members(session)
+            session.commit()
         finally:
             session.close()
     except HTTPException:

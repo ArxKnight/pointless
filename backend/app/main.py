@@ -11,6 +11,7 @@ from app.database import Base, SessionLocal, configure_engine
 from app.models import User
 from app.runtime_config import is_installed
 from app.services.auth_service import hash_password
+from app.services.member_sync import sync_active_users_to_members
 from app.api.v1 import auth, members, quarters, plans, analytics, install
 
 app=FastAPI(title="Quarterly Points Distribution", version="1.0.0")
@@ -43,6 +44,8 @@ def startup():
     try:
         if not db.query(User).first() and settings.first_admin_username and settings.first_admin_password:
             db.add(User(username=settings.first_admin_username,display_name="Administrator",email=settings.first_admin_email,password_hash=hash_password(settings.first_admin_password),is_admin=True,is_active=True)); db.commit()
+        sync_active_users_to_members(db)
+        db.commit()
     finally: db.close()
 
 @app.get("/api/health")

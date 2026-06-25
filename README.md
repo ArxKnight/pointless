@@ -20,7 +20,7 @@ Prebuilt single-container app image on Docker Hub:
 
 ```text
 arxknight/quarterly-points-app:latest
-arxknight/quarterly-points-app:0.1.3
+arxknight/quarterly-points-app:0.1.4
 ```
 
 The app container includes both:
