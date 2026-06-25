@@ -13,7 +13,7 @@ from app.runtime_config import is_installed
 from app.services.auth_service import hash_password
 from app.services.member_sync import sync_active_users_to_members
 from app.services.quarter_service import auto_generate_quarter
-from app.api.v1 import auth, members, quarters, plans, analytics, install
+from app.api.v1 import auth, members, quarters, plans, analytics, install, users
 
 app = FastAPI(title="Quarterly Points Distribution", version="1.0.0")
 logger = logging.getLogger("quarterly_points.startup")
@@ -24,6 +24,7 @@ app.include_router(members.router, prefix="/api")
 app.include_router(quarters.router, prefix="/api")
 app.include_router(plans.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
+app.include_router(users.router, prefix="/api")
 
 FRONTEND_ROOT = Path("/usr/share/nginx/html")
 

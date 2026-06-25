@@ -11,7 +11,7 @@ export function Layout({user,setUser}:{user:User;setUser:(u:null)=>void}){
     ['/tree','🌳 My Giving Tree'],
     ['/overview','🌐 Overview'],
     ['/history','🕐 History'],
-    ...(user.is_admin?[['/members','👥 Members'],['/quarters','⚙️ Quarters']] as [string,string][]:[]),
+    ...(user.is_admin?[['/quarters','⚙️ Quarters']] as [string,string][]:[]),
     ['/settings','⚙️ Settings'],
   ];
 

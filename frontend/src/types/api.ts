@@ -1,4 +1,5 @@
 export type User={id:number;username:string;display_name:string;email:string;is_admin:boolean};
+export type UserAdmin={id:number;username:string;display_name:string;email:string;is_admin:boolean;is_active:boolean;created_at:string};
 export type Member={id:number;display_name:string;email:string;active:boolean;created_at:string};
 export type Quarter={id:number;year:number;quarter:number;label:string;generated_at:string;is_active:boolean;is_completed:boolean};
 export type Plan={id:number;quarter_id:number;from_member_id:number;to_member_id:number;from_name:string;to_name:string;amount:number;acknowledged:boolean};

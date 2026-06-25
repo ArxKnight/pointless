@@ -9,7 +9,6 @@ import {Dashboard} from './pages/Dashboard';
 import {MyTree} from './pages/MyTree';
 import {Overview} from './pages/Overview';
 import {History} from './pages/History';
-import {Members} from './pages/Members';
 import {Quarters} from './pages/Quarters';
 import {Settings} from './pages/Settings';
 
@@ -46,7 +45,6 @@ export default function App(){
               <Route path="history" element={<History/>}/>
               <Route path="settings" element={<Settings user={user}/>}/>
               {user.is_admin&&<>
-                <Route path="members" element={<Members/>}/>
                 <Route path="quarters" element={<Quarters/>}/>
               </>}
               <Route path="*" element={<Navigate to="/"/>}/>

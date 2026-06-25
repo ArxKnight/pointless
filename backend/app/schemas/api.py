@@ -18,6 +18,10 @@ class PlanOut(BaseModel):
     id:int; quarter_id:int; from_member_id:int; to_member_id:int; from_name:str; to_name:str; amount:int; acknowledged:bool
 class GenerateIn(BaseModel): year:int|None=None; quarter:int|None=None; preview:bool=False; seed:int|None=None
 class OverviewOut(BaseModel): total_members:int; active_quarter:str|None; completion_rate:float; total_sent:int; total_planned:int
+class UserAdminOut(BaseModel):
+    id:int; username:str; display_name:str; email:str; is_admin:bool; is_active:bool; created_at:datetime
+    class Config: from_attributes=True
+class UserRoleUpdate(BaseModel): is_admin:bool
 
 class InstallDatabaseIn(BaseModel):
     host: str = "mysql"
