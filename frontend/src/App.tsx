@@ -35,22 +35,20 @@ export default function App(){
 
   return (
     <BrowserRouter>
-      {!user
-        ? <Routes><Route path="*" element={<Login setUser={setUser}/>}/></Routes>
-        : <Routes>
-            <Route element={<Layout user={user} setUser={setUser}/>}>
+      <Routes>
+        <Route path="tree/:slug" element={<MyTree/>}/>
+        {!user
+          ? <Route path="*" element={<Login setUser={setUser}/>}/>
+          : <Route element={<Layout user={user} setUser={setUser}/>}>
               <Route index element={<Dashboard/>}/>
-              <Route path="tree" element={<MyTree/>}/>
               <Route path="overview" element={<Overview/>}/>
               <Route path="history" element={<History/>}/>
               <Route path="settings" element={<Settings user={user}/>}/>
-              {user.is_admin&&<>
-                <Route path="quarters" element={<Quarters/>}/>
-              </>}
+              {user.is_admin&&<Route path="quarters" element={<Quarters/>}/>}
               <Route path="*" element={<Navigate to="/"/>}/>
             </Route>
-          </Routes>
-      }
+        }
+      </Routes>
     </BrowserRouter>
   );
 }

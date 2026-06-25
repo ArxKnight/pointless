@@ -11,11 +11,9 @@ from app.database import Base, SessionLocal, configure_engine
 from app.models import User
 from app.runtime_config import is_installed
 from app.services.auth_service import hash_password
-from app.services.member_sync import sync_active_users_to_members
-from app.services.quarter_service import auto_generate_quarter
-from app.services.schema_upgrade import ensure_team_schema
-from app.services.team_seed import ensure_initial_team_data
-from app.api.v1 import auth, members, quarters, plans, analytics, install, users, teams
+from app.services.participant_service import backfill_participants_from_department_members
+from app.services.schema_upgrade import ensure_team_schema, ensure_participant_schema
+from app.api.v1 import auth, members, quarters, plans, analytics, install, users, teams, participants, compatibility, public
 
 app = FastAPI(title="Quarterly Points Distribution", version="1.0.0")
 logger = logging.getLogger("quarterly_points.startup")
@@ -27,7 +25,10 @@ app.include_router(quarters.router, prefix="/api")
 app.include_router(plans.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
-app.include_router(teams.router, prefix="/api")
+app.include_router(teams.router, prefix="/api")  # legacy/deprecated; hidden from core workflow
+app.include_router(participants.router, prefix="/api")
+app.include_router(compatibility.router, prefix="/api")
+app.include_router(public.router, prefix="/api")
 
 FRONTEND_ROOT = Path("/usr/share/nginx/html")
 
@@ -47,6 +48,7 @@ def startup():
         return
     Base.metadata.create_all(bind=engine)
     ensure_team_schema(engine)
+    ensure_participant_schema(engine)
     db = SessionLocal()
     try:
         if not db.query(User).first() and settings.first_admin_username and settings.first_admin_password:
@@ -59,10 +61,8 @@ def startup():
                 is_active=True,
             ))
             db.commit()
-        ensure_initial_team_data(db)
-        sync_active_users_to_members(db)
+        backfill_participants_from_department_members(db)
         db.commit()
-        auto_generate_quarter(db)
     finally:
         db.close()
 

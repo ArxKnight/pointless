@@ -1,1 +1,15 @@
-from .entities import User, DepartmentMember, Quarter, GivingPlan, PointsLedger, Team, TeamGroup
+from .entities import (
+    CompatibilityGroup,
+    CompatibilityGroupMember,
+    CompatibilityRule,
+    DepartmentMember,
+    GivingPlan,
+    Participant,
+    ParticipantSlugRedirect,
+    PointsLedger,
+    Quarter,
+    QuarterParticipant,
+    Team,
+    TeamGroup,
+    User,
+)

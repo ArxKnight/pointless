@@ -32,6 +32,12 @@ class Team(Base):
 
 
 class User(Base):
+    """Administrator login account.
+
+    Distribution participants are stored separately in Participant and do not
+    require usernames, passwords, emails or roles.
+    """
+
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
@@ -46,6 +52,8 @@ class User(Base):
 
 
 class DepartmentMember(Base):
+    """Legacy distribution member table retained for safe migration/history."""
+
     __tablename__ = "department_members"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     display_name: Mapped[str] = mapped_column(String(160), index=True)
@@ -53,6 +61,54 @@ class DepartmentMember(Base):
     added_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Participant(Base):
+    __tablename__ = "participants"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(160), index=True)
+    slug: Mapped[str] = mapped_column(String(180), unique=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    legacy_member_id: Mapped[int | None] = mapped_column(ForeignKey("department_members.id"), nullable=True, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ParticipantSlugRedirect(Base):
+    __tablename__ = "participant_slug_redirects"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    participant_id: Mapped[int] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), index=True)
+    old_slug: Mapped[str] = mapped_column(String(180), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CompatibilityRule(Base):
+    __tablename__ = "compatibility_rules"
+    __table_args__ = (UniqueConstraint("from_participant_id", "to_participant_id", name="uq_compatibility_pair"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    from_participant_id: Mapped[int] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), index=True)
+    to_participant_id: Mapped[int] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), index=True)
+    is_allowed: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CompatibilityGroup(Base):
+    __tablename__ = "compatibility_groups"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CompatibilityGroupMember(Base):
+    __tablename__ = "compatibility_group_members"
+    __table_args__ = (UniqueConstraint("group_id", "participant_id", name="uq_compat_group_member"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("compatibility_groups.id", ondelete="CASCADE"), index=True)
+    participant_id: Mapped[int] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), index=True)
 
 
 class Quarter(Base):
@@ -65,27 +121,49 @@ class Quarter(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    allocation_min: Mapped[int] = mapped_column(Integer, default=5)
+    allocation_max: Mapped[int] = mapped_column(Integer, default=25)
+    preferred_min_recipients: Mapped[int] = mapped_column(Integer, default=2)
+    preferred_max_recipients: Mapped[int] = mapped_column(Integer, default=5)
+
+
+class QuarterParticipant(Base):
+    __tablename__ = "quarter_participants"
+    __table_args__ = (UniqueConstraint("quarter_id", "participant_id", name="uq_quarter_participant"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    quarter_id: Mapped[int] = mapped_column(ForeignKey("quarters.id", ondelete="CASCADE"), index=True)
+    participant_id: Mapped[int] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), index=True)
+    participant = relationship("Participant")
 
 
 class GivingPlan(Base):
     __tablename__ = "giving_plans"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     quarter_id: Mapped[int] = mapped_column(ForeignKey("quarters.id"), index=True)
-    from_member_id: Mapped[int] = mapped_column(ForeignKey("department_members.id"), index=True)
-    to_member_id: Mapped[int] = mapped_column(ForeignKey("department_members.id"), index=True)
+    from_member_id: Mapped[int | None] = mapped_column(ForeignKey("department_members.id"), nullable=True, index=True)
+    to_member_id: Mapped[int | None] = mapped_column(ForeignKey("department_members.id"), nullable=True, index=True)
+    from_participant_id: Mapped[int | None] = mapped_column(ForeignKey("participants.id"), nullable=True, index=True)
+    to_participant_id: Mapped[int | None] = mapped_column(ForeignKey("participants.id"), nullable=True, index=True)
     amount: Mapped[int] = mapped_column(Integer)
     acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
     quarter = relationship("Quarter")
     from_member = relationship("DepartmentMember", foreign_keys=[from_member_id])
     to_member = relationship("DepartmentMember", foreign_keys=[to_member_id])
+    from_participant = relationship("Participant", foreign_keys=[from_participant_id])
+    to_participant = relationship("Participant", foreign_keys=[to_participant_id])
 
 
 class PointsLedger(Base):
     __tablename__ = "points_ledger"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     quarter_id: Mapped[int] = mapped_column(ForeignKey("quarters.id"), index=True)
-    from_member_id: Mapped[int] = mapped_column(ForeignKey("department_members.id"), index=True)
-    to_member_id: Mapped[int] = mapped_column(ForeignKey("department_members.id"), index=True)
+    from_member_id: Mapped[int | None] = mapped_column(ForeignKey("department_members.id"), nullable=True, index=True)
+    to_member_id: Mapped[int | None] = mapped_column(ForeignKey("department_members.id"), nullable=True, index=True)
+    from_participant_id: Mapped[int | None] = mapped_column(ForeignKey("participants.id"), nullable=True, index=True)
+    to_participant_id: Mapped[int | None] = mapped_column(ForeignKey("participants.id"), nullable=True, index=True)
     amount: Mapped[int] = mapped_column(Integer)
     marked_sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     marked_sent_by: Mapped[int] = mapped_column(ForeignKey("users.id"))

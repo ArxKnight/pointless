@@ -43,7 +43,8 @@ def upgrade():
     op.create_index('ix_teams_group_id', 'teams', ['group_id'])
 
     op.add_column('users', sa.Column('team_id', sa.Integer(), nullable=True))
-    op.create_foreign_key('fk_users_team_id_teams', 'users', 'teams', ['team_id'], ['id'], ondelete='SET NULL')
+    if op.get_bind().dialect.name != 'sqlite':
+        op.create_foreign_key('fk_users_team_id_teams', 'users', 'teams', ['team_id'], ['id'], ondelete='SET NULL')
     op.create_index('ix_users_team_id', 'users', ['team_id'])
 
     groups = table('team_groups', column('id', sa.Integer), column('name', sa.String), column('description', sa.Text), column('display_order', sa.Integer), column('is_active', sa.Boolean))
@@ -64,7 +65,8 @@ def upgrade():
 
 def downgrade():
     op.drop_index('ix_users_team_id', table_name='users')
-    op.drop_constraint('fk_users_team_id_teams', 'users', type_='foreignkey')
+    if op.get_bind().dialect.name != 'sqlite':
+        op.drop_constraint('fk_users_team_id_teams', 'users', type_='foreignkey')
     op.drop_column('users', 'team_id')
     op.drop_index('ix_teams_group_id', table_name='teams')
     op.drop_index('ix_teams_name', table_name='teams')

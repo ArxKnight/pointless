@@ -1,36 +1,23 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useMemo,useState} from 'react';
 import {api,post} from '../lib/api';
-import {Plan,Quarter} from '../types/api';
+import {Participant,Plan,Quarter,QuarterDetail} from '../types/api';
 
 export function Quarters(){
- const [quarters,setQuarters]=useState<Quarter[]>([]);
- const [detail,setDetail]=useState<Plan[]>([]);
- const load=()=>api<Quarter[]>('/quarters').then(setQuarters);
+ const [quarters,setQuarters]=useState<Quarter[]>([]);const[participants,setParticipants]=useState<Participant[]>([]);const[selected,setSelected]=useState<number[]>([]);const[detail,setDetail]=useState<QuarterDetail|null>(null);const[msg,setMsg]=useState('');
+ const [form,setForm]=useState({year:new Date().getFullYear(),quarter:Math.floor(new Date().getMonth()/3)+1});
+ const load=()=>{api<Quarter[]>('/quarters').then(setQuarters);api<Participant[]>('/participants?include_inactive=false').then(setParticipants)};
  useEffect(()=>{void load()},[]);
- return <div className="space-y-6">
-  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-   <div>
-    <h1 className="text-3xl font-semibold">Quarters</h1>
-    <p className="text-slate-400 text-sm mt-1">Quarters are generated automatically at the start of each calendar quarter.</p>
-   </div>
-  </div>
-  <div className="card overflow-hidden">
-   <table className="w-full text-sm">
-    <thead><tr className="bg-black/20 text-left text-slate-400"><th className="p-3">Quarter</th><th>Status</th><th>Actions</th></tr></thead>
-    <tbody>{quarters.map(q=><tr key={q.id} className="border-t border-border">
-     <td className="p-3">{q.label}</td>
-     <td>{q.is_completed?'Completed':q.is_active?'Active':'Draft'}</td>
-     <td className="space-x-2">
-      <button onClick={async()=>{const r=await api<any>(`/quarters/${q.id}`);setDetail(r.plan)}} className="rounded border border-border px-3 py-1">View</button>
-      {q.is_active&&!q.is_completed&&<button onClick={async()=>{await post(`/quarters/${q.id}/complete`);void load()}} className="rounded border border-border px-3 py-1">Complete</button>}
-     </td>
-    </tr>)}</tbody>
-   </table>
-  </div>
-  {detail.length>0&&<div className="card p-4">
-   <h2 className="font-semibold mb-3">Distribution</h2>
-   <div className="space-y-2">{detail.map(p=><div key={p.id} className="rounded bg-black/20 p-3 flex items-center justify-between"><span className="text-sm"><span className="font-medium">{p.from_name}</span><span className="text-slate-400"> → </span><span className="font-medium">{p.to_name}</span></span><span className="font-mono text-indigo-300">{p.amount} pts <span className={p.acknowledged?'text-green-400':'text-yellow-400'}>{p.acknowledged?'✓':'pending'}</span></span></div>)}
-   </div>
-  </div>}
+ const totals=useMemo(()=>{const sent=new Map<number,number>(),recv=new Map<number,number>();(detail?.plan||[]).forEach(p=>{if(p.from_participant_id)sent.set(p.from_participant_id,(sent.get(p.from_participant_id)||0)+p.amount);if(p.to_participant_id)recv.set(p.to_participant_id,(recv.get(p.to_participant_id)||0)+p.amount)});return{sent,recv}},[detail]);
+ async function createQuarter(){try{const q=await post<Quarter>('/quarters',{...form});setMsg(`Created ${q.label}`);void load()}catch(e:any){setMsg(e.message)}}
+ async function openQuarter(q:Quarter){const d=await api<QuarterDetail>(`/quarters/${q.id}`);setDetail(d);setSelected(d.participants.map(p=>p.id))}
+ async function saveParticipants(){if(!detail)return;await api(`/quarters/${detail.quarter.id}/participants`,{method:'PUT',body:JSON.stringify({participant_ids:selected})});setMsg('Quarter participants saved.');await openQuarter(detail.quarter)}
+ async function validate(){if(!detail)return;const r=await post<any>(`/quarters/${detail.quarter.id}/validate`);setMsg(r.valid?'Configuration is valid.':r.errors.join(' '))}
+ async function generate(){if(!detail)return;try{const r=await post<any>(`/quarters/${detail.quarter.id}/generate`,{});setMsg('Draft generated. Review before publishing.');setDetail({quarter:r.quarter,participants:detail.participants,plan:r.plans})}catch(e:any){setMsg(e.message)}}
+ async function publish(){if(!detail||!confirm('Publish this distribution? Public tree pages will update.'))return;try{const r=await post<any>(`/quarters/${detail.quarter.id}/publish`);setMsg('Published.');setDetail({quarter:r.quarter,participants:detail.participants,plan:r.plans});void load()}catch(e:any){setMsg(e.message)}}
+ return <div className="space-y-6"><div><h1 className="text-3xl font-semibold">Quarters</h1><p className="text-slate-400 text-sm mt-1">Select participants, validate compatibility, generate a draft, review it, then publish.</p></div>{msg&&<div className="card p-4 text-sm">{msg}</div>}
+  <div className="card p-4"><h2 className="font-semibold">Create quarter</h2><div className="mt-3 flex gap-2"><input type="number" value={form.year} onChange={e=>setForm({...form,year:Number(e.target.value)})} className="rounded bg-bg p-2"/><select value={form.quarter} onChange={e=>setForm({...form,quarter:Number(e.target.value)})} className="rounded bg-bg p-2">{[1,2,3,4].map(q=><option key={q} value={q}>Q{q}</option>)}</select><button onClick={createQuarter} className="rounded bg-indigo-500 px-4 font-semibold">Create draft</button></div></div>
+  <div className="card overflow-hidden"><table className="w-full text-sm"><thead><tr className="bg-black/20 text-left text-slate-400"><th className="p-3">Quarter</th><th>Status</th><th>Actions</th></tr></thead><tbody>{quarters.map(q=><tr key={q.id} className="border-t border-border"><td className="p-3">{q.label}</td><td>{q.status}</td><td><button onClick={()=>openQuarter(q)} className="rounded border border-border px-3 py-1">Open</button></td></tr>)}</tbody></table></div>
+  {detail&&<div className="grid gap-6 xl:grid-cols-[360px_1fr]"><div className="card p-4"><h2 className="font-semibold">{detail.quarter.label} participants</h2><p className="text-sm text-slate-400">Draft quarters can have their own participant list. Inactive participants remain in history but are not auto-added.</p><div className="mt-4 max-h-[520px] overflow-auto space-y-2">{participants.map(p=><label key={p.id} className="flex items-center gap-2 rounded border border-border p-2 text-sm"><input type="checkbox" checked={selected.includes(p.id)} disabled={detail.quarter.status==='published'} onChange={e=>setSelected(e.target.checked?[...selected,p.id]:selected.filter(id=>id!==p.id))}/>{p.display_name}</label>)}</div><div className="mt-4 flex flex-wrap gap-2"><button onClick={saveParticipants} disabled={detail.quarter.status==='published'} className="rounded bg-indigo-500 px-3 py-2 text-sm disabled:opacity-50">Save participants</button><button onClick={validate} className="rounded border border-border px-3 py-2 text-sm">Validate</button><button onClick={generate} disabled={detail.quarter.status==='published'} className="rounded bg-teal-500 px-3 py-2 text-sm disabled:opacity-50">Generate draft</button><button onClick={publish} disabled={detail.plan.length===0||detail.quarter.status==='published'} className="rounded bg-yellow-500 px-3 py-2 text-sm font-semibold text-black disabled:opacity-50">Publish</button></div></div><Preview detail={detail} sent={totals.sent} recv={totals.recv}/></div>}
  </div>
 }
+function Preview({detail,sent,recv}:{detail:QuarterDetail;sent:Map<number,number>;recv:Map<number,number>}){const byFrom=new Map<number,Plan[]>();detail.plan.forEach(p=>{if(p.from_participant_id){byFrom.set(p.from_participant_id,[...(byFrom.get(p.from_participant_id)||[]),p])}});return <div className="card p-4"><h2 className="font-semibold">Draft preview</h2>{detail.plan.length===0?<p className="mt-3 text-slate-400">No draft generated yet.</p>:<div className="mt-4 space-y-4">{detail.participants.map(p=><div key={p.id} className="rounded border border-border p-4"><div className="flex items-center justify-between"><h3 className="font-semibold">{p.display_name}</h3><span className={`text-sm ${(sent.get(p.id)||0)===50&&(recv.get(p.id)||0)===50?'text-green-300':'text-red-300'}`}>Sent {sent.get(p.id)||0} / Received {recv.get(p.id)||0}</span></div><div className="mt-3 grid gap-2 sm:grid-cols-2">{(byFrom.get(p.id)||[]).map(row=><div key={row.id} className="rounded bg-black/20 p-3"><span>{row.to_name}</span><strong className="float-right">{row.amount}</strong></div>)}</div></div>)}</div>}</div>}
