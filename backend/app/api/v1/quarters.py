@@ -62,9 +62,10 @@ def get_active(db: Session = Depends(get_db), user: User = Depends(get_current_u
 
 
 @router.post("/regenerate")
-def regenerate(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def regenerate(force: bool = False, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """Admin: wipe and regenerate the current active quarter's assignments.
-    Refused if any points have already been marked as sent."""
+    Normally refused if any points have already been marked as sent.
+    Pass ?force=true to override — this also clears all sent marks for the quarter."""
     q = (
         db.query(Quarter)
         .filter(Quarter.is_active == True, Quarter.is_completed == False)  # noqa: E712
@@ -72,10 +73,14 @@ def regenerate(db: Session = Depends(get_db), admin: User = Depends(require_admi
         .first()
     )
     if q and db.query(PointsLedger).filter(PointsLedger.quarter_id == q.id).first():
-        raise HTTPException(
-            409,
-            "Cannot regenerate: some points have already been marked as sent for this quarter.",
-        )
+        if not force:
+            raise HTTPException(
+                409,
+                "Cannot regenerate: some points have already been marked as sent for this quarter.",
+            )
+        # force=True: wipe the ledger (sent marks) before regenerating
+        db.query(PointsLedger).filter(PointsLedger.quarter_id == q.id).delete()
+        db.commit()
 
     # Clear plans for the active quarter so history query below excludes them
     if q:

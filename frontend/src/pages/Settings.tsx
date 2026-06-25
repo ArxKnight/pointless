@@ -5,7 +5,7 @@ export function Settings({user}:{user:User}){
   const [regenMsg,setRegenMsg]=useState('');
   const [users,setUsers]=useState<UserAdmin[]>([]);
   const [members,setMembers]=useState<Member[]>([]);
-  const [memberForm,setMemberForm]=useState({display_name:'',email:'',username:'',password:''});
+  const [memberForm,setMemberForm]=useState({display_name:'',email:'',password:''});
   const [roleLoading,setRoleLoading]=useState<number|null>(null);
   const [memberLoading,setMemberLoading]=useState<number|null>(null);
 
@@ -30,16 +30,25 @@ export function Settings({user}:{user:User}){
 
   async function handleAddMember(e:React.FormEvent){
     e.preventDefault();
-    await post('/members',memberForm);
-    setMemberForm({display_name:'',email:'',username:'',password:''});
+    // display_name is used as the username too — derive it as lowercase, no spaces
+    const username=memberForm.display_name.toLowerCase().replace(/\s+/g,'_');
+    await post('/members',{...memberForm,username});
+    setMemberForm({display_name:'',email:'',password:''});
     void loadMembers();void loadUsers();
   }
 
-  async function handleRegenerate(){
-    if(!confirm('This will delete and regenerate all giving assignments for the current quarter. Any points already marked as sent will block this action. Continue?'))return;
-    setRegen('loading');
-    try{const res=await post<{quarter:{label:string};plans:unknown[]}>('/quarters/regenerate');setRegenMsg(`Done — ${res.quarter.label} regenerated with ${(res.plans as unknown[]).length} new assignments.`);setRegen('done');}
-    catch(e:any){setRegenMsg(e.message||'Regeneration failed.');setRegen('error');}
+  async function handleRegenerate(force:boolean){
+    const msg=force
+      ? 'This will clear ALL sent marks AND regenerate all assignments for the current quarter. This cannot be undone. Continue?'
+      : 'This will delete and regenerate all giving assignments for the current quarter. Any points already marked as sent will block this action. Continue?';
+    if(!confirm(msg))return;
+    setRegen('loading');setRegenMsg('');
+    try{
+      const url=force?'/quarters/regenerate?force=true':'/quarters/regenerate';
+      const res=await post<{quarter:{label:string};plans:unknown[]}>(url);
+      setRegenMsg(`Done — ${res.quarter.label} regenerated with ${(res.plans as unknown[]).length} new assignments.`);
+      setRegen('done');
+    }catch(e:any){setRegenMsg(e.message||'Regeneration failed.');setRegen('error');}
   }
 
   return(
@@ -53,7 +62,7 @@ export function Settings({user}:{user:User}){
       <div className="card p-6 space-y-3">
         <h2 className="text-lg font-semibold">Your Account</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
-          <div><p className="text-slate-400">Display name</p><p className="mt-0.5 font-medium">{user.display_name}</p></div>
+          <div><p className="text-slate-400">Display Name</p><p className="mt-0.5 font-medium">{user.display_name}</p></div>
           <div><p className="text-slate-400">Username</p><p className="mt-0.5 font-medium">{user.username}</p></div>
           <div><p className="text-slate-400">Email</p><p className="mt-0.5 font-medium">{user.email}</p></div>
           <div><p className="text-slate-400">Role</p><p className="mt-0.5 font-medium">{user.is_admin?'🔑 Administrator':'Member'}</p></div>
@@ -108,12 +117,11 @@ export function Settings({user}:{user:User}){
         <div className="card p-6 space-y-4 border border-teal-500/20">
           <div>
             <h2 className="text-lg font-semibold">Department Members</h2>
-            <p className="mt-1 text-sm text-slate-400">Add members and toggle their active status. Adding a username and password also creates a login account.</p>
+            <p className="mt-1 text-sm text-slate-400">Add members and toggle their active status. Adding a password also creates a login account — the username is derived automatically from the display name.</p>
           </div>
-          <form onSubmit={handleAddMember} className="grid gap-3 sm:grid-cols-5">
-            <input required placeholder="Display name" value={memberForm.display_name} onChange={e=>setMemberForm({...memberForm,display_name:e.target.value})} className="rounded bg-bg p-3 text-sm"/>
+          <form onSubmit={handleAddMember} className="grid gap-3 sm:grid-cols-4">
+            <input required placeholder="Display Name (Username)" value={memberForm.display_name} onChange={e=>setMemberForm({...memberForm,display_name:e.target.value})} className="rounded bg-bg p-3 text-sm"/>
             <input required placeholder="Email" type="email" value={memberForm.email} onChange={e=>setMemberForm({...memberForm,email:e.target.value})} className="rounded bg-bg p-3 text-sm"/>
-            <input placeholder="Username (optional)" value={memberForm.username} onChange={e=>setMemberForm({...memberForm,username:e.target.value})} className="rounded bg-bg p-3 text-sm"/>
             <input type="password" placeholder="Password (optional)" value={memberForm.password} onChange={e=>setMemberForm({...memberForm,password:e.target.value})} className="rounded bg-bg p-3 text-sm"/>
             <button type="submit" className="rounded bg-indigo-500 px-4 py-3 text-sm font-semibold hover:bg-indigo-400">Add Member</button>
           </form>
@@ -153,12 +161,29 @@ export function Settings({user}:{user:User}){
         <div className="card p-6 space-y-4 border border-yellow-500/20">
           <div>
             <h2 className="text-lg font-semibold">Regenerate Current Quarter</h2>
-            <p className="mt-1 text-sm text-slate-400">Use this if the quarter assignments need to be rebuilt — for example after members were added or removed. All existing assignments for the current quarter will be wiped and regenerated. This is blocked once any points have been marked as sent.</p>
+            <p className="mt-1 text-sm text-slate-400">
+              Rebuilds the quarter's giving assignments — useful after members are added or removed.
+              Use <span className="text-yellow-300 font-medium">Regenerate</span> normally (blocked if any sends have been marked).
+              Use <span className="text-red-400 font-medium">Force Regenerate</span> to override and clear all sent marks too.
+            </p>
           </div>
           {regenMsg&&(<p className={`rounded-lg p-3 text-sm ${regen==='error'?'bg-red-500/10 text-red-400':'bg-green-500/10 text-green-400'}`}>{regenMsg}</p>)}
-          <button onClick={handleRegenerate} disabled={regen==='loading'} className="rounded-xl bg-yellow-500 px-5 py-2.5 text-sm font-semibold text-black hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed transition">
-            {regen==='loading'?'Regenerating…':'⟳ Regenerate Quarter'}
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={()=>handleRegenerate(false)}
+              disabled={regen==='loading'}
+              className="rounded-xl bg-yellow-500 px-5 py-2.5 text-sm font-semibold text-black hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              {regen==='loading'?'Regenerating…':'⟳ Regenerate Quarter'}
+            </button>
+            <button
+              onClick={()=>handleRegenerate(true)}
+              disabled={regen==='loading'}
+              className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              {regen==='loading'?'Regenerating…':'⚠ Force Regenerate'}
+            </button>
+          </div>
         </div>
 
       </>)}
