@@ -1,0 +1,2 @@
+export function StatusBadge({sent}:{sent:boolean}){return <span className={`rounded-full px-2 py-1 text-xs font-semibold ${sent?'bg-green-500/15 text-green-400':'bg-amber-500/15 text-amber-400'}`}>{sent?'Sent':'Pending'}</span>}
+export function QuarterBadge({label}:{label?:string|null}){return <span className="rounded-full border border-indigo-500/40 bg-indigo-500/15 px-3 py-1 text-xs font-semibold text-indigo-300">{label||'No active quarter'}</span>}

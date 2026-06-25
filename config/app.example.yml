@@ -1,0 +1,4 @@
+app:
+  name: Quarterly Points Distribution
+  forced_dark_mode: true
+  points_per_quarter: 50

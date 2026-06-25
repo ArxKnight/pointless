@@ -1,0 +1,1 @@
+export function Settings(){return <div className='card p-6'><h1 className='text-3xl font-semibold'>Settings</h1><p className='mt-2 text-slate-400'>Account and notification settings placeholder for phase 2.</p></div>}
