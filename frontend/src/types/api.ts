@@ -1,7 +1,7 @@
 export type Team={id:number;name:string;description?:string|null;colour:string;display_order:number;is_active:boolean;group_id?:number|null;group_name?:string|null;created_at?:string;updated_at?:string;user_count?:number};
 export type TeamGroup={id:number;name:string;description?:string|null;display_order:number;is_active:boolean;created_at?:string;updated_at?:string;team_count?:number;user_count?:number;teams?:Team[]};
-export type User={id:number;username:string;display_name:string;email:string;is_admin:boolean;team_id?:number|null};
-export type UserAdmin={id:number;username:string;display_name:string;email:string;is_admin:boolean;is_active:boolean;created_at:string;team_id?:number|null;team_name?:string|null};
+export type User={id:number;username:string;display_name:string;email:string;is_admin:boolean;is_super_admin?:boolean;is_active?:boolean;team_id?:number|null};
+export type UserAdmin={id:number;username:string;display_name:string;email:string;is_admin:boolean;is_super_admin:boolean;is_active:boolean;created_at:string;last_login_at?:string|null;team_id?:number|null;team_name?:string|null};
 export type Member={id:number;display_name:string;email:string;active:boolean;created_at:string};
 export type Quarter={id:number;year:number;quarter:number;label:string;generated_at:string;is_active:boolean;is_completed:boolean;status:string;published_at?:string|null};
 export type Plan={id:number;quarter_id:number;from_member_id?:number|null;to_member_id?:number|null;from_participant_id?:number|null;to_participant_id?:number|null;from_name:string;to_name:string;amount:number;acknowledged:boolean};

@@ -45,7 +45,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_super_admin: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True)
     team: Mapped["Team | None"] = relationship("Team", back_populates="members", foreign_keys=[team_id])
@@ -124,10 +126,11 @@ class Quarter(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    allocation_min: Mapped[int] = mapped_column(Integer, default=5)
-    allocation_max: Mapped[int] = mapped_column(Integer, default=25)
+    published_by_admin_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    allocation_min: Mapped[int] = mapped_column(Integer, default=10)
+    allocation_max: Mapped[int] = mapped_column(Integer, default=50)
     preferred_min_recipients: Mapped[int] = mapped_column(Integer, default=2)
-    preferred_max_recipients: Mapped[int] = mapped_column(Integer, default=5)
+    preferred_max_recipients: Mapped[int] = mapped_column(Integer, default=3)
 
 
 class QuarterParticipant(Base):
@@ -141,6 +144,7 @@ class QuarterParticipant(Base):
 
 class GivingPlan(Base):
     __tablename__ = "giving_plans"
+    __table_args__ = (UniqueConstraint("quarter_id", "from_participant_id", "to_participant_id", name="uq_giving_plan_quarter_participant_pair"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     quarter_id: Mapped[int] = mapped_column(ForeignKey("quarters.id"), index=True)
     from_member_id: Mapped[int | None] = mapped_column(ForeignKey("department_members.id"), nullable=True, index=True)
@@ -154,6 +158,20 @@ class GivingPlan(Base):
     to_member = relationship("DepartmentMember", foreign_keys=[to_member_id])
     from_participant = relationship("Participant", foreign_keys=[from_participant_id])
     to_participant = relationship("Participant", foreign_keys=[to_participant_id])
+
+
+class AdminInvitation(Base):
+    __tablename__ = "admin_invitations"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    invitee_name: Mapped[str] = mapped_column(String(160))
+    invitee_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_by_admin_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    used_by_admin_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class PointsLedger(Base):

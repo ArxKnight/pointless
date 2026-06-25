@@ -50,10 +50,10 @@ def quarter_participants(db: Session, qid: int) -> list[Participant]:
 
 def settings_for(q: Quarter, seed: int | None = None) -> GenerationSettings:
     return GenerationSettings(
-        min_amount=q.allocation_min,
-        max_amount=q.allocation_max,
-        preferred_min_recipients=q.preferred_min_recipients,
-        preferred_max_recipients=q.preferred_max_recipients,
+        min_amount=10,
+        max_amount=50,
+        preferred_min_recipients=max(1, q.preferred_min_recipients or 2),
+        preferred_max_recipients=max(2, q.preferred_max_recipients or 3),
         seed=seed,
     )
 
@@ -74,8 +74,8 @@ def create_quarter(data: QuarterCreateIn, db: Session = Depends(get_db), admin: 
         status="draft",
         is_active=False,
         is_completed=False,
-        allocation_min=data.allocation_min,
-        allocation_max=data.allocation_max,
+        allocation_min=10,
+        allocation_max=50,
         preferred_min_recipients=data.preferred_min_recipients,
         preferred_max_recipients=data.preferred_max_recipients,
     )
@@ -168,7 +168,7 @@ def generate_quarter(quarter_id: int, data: QuarterGenerateIn = QuarterGenerateI
     if q.status == "published": raise HTTPException(409, "Cannot regenerate a published quarter")
     participants = quarter_participants(db, q.id)
     try:
-        rows = generate_distribution(participants, db.query(CompatibilityRule).all(), settings_for(q, data.seed))
+        rows = generate_distribution(participants, db.query(CompatibilityRule).all(), settings_for(q, data.seed), history=[plan_row(r) for r in db.query(GivingPlan).filter(GivingPlan.quarter_id != q.id).order_by(GivingPlan.id.desc()).limit(200).all()])
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     db.query(GivingPlan).filter(GivingPlan.quarter_id == q.id).delete()
@@ -220,7 +220,7 @@ def publish_quarter(quarter_id: int, db: Session = Depends(get_db), admin: User 
     if not validation["valid"]: raise HTTPException(400, validation["errors"][0])
     for old in db.query(Quarter).filter(Quarter.status == "published").all():
         old.is_active = False
-    q.status = "published"; q.is_active = True; q.is_completed = False; q.published_at = datetime.utcnow()
+    q.status = "published"; q.is_active = True; q.is_completed = False; q.published_at = datetime.utcnow(); q.published_by_admin_id = admin.id
     db.commit(); db.refresh(q)
     return {"quarter": QuarterOut.model_validate(q), "plans": plan_rows(db, q.id)}
 
@@ -230,7 +230,7 @@ def legacy_regenerate(force: bool = False, db: Session = Depends(get_db), admin:
     y, qn = current_calendar_quarter()
     q = db.query(Quarter).filter_by(year=y, quarter=qn).first()
     if not q:
-        q = Quarter(year=y, quarter=qn, label=f"Q{qn} {y}", status="draft", is_active=False, is_completed=False)
+        q = Quarter(year=y, quarter=qn, label=f"Q{qn} {y}", status="draft", is_active=False, is_completed=False, allocation_min=10, allocation_max=50, preferred_max_recipients=3)
         db.add(q); db.flush()
         active = db.query(Participant).filter(Participant.is_active == True).all()  # noqa: E712
         for p in active:
@@ -244,7 +244,7 @@ def generate(data: GenerateIn, db: Session = Depends(get_db), admin: User = Depe
     y, qn = (data.year, data.quarter) if data.year and data.quarter else next_quarter(db)
     existing = db.query(Quarter).filter(Quarter.year == y, Quarter.quarter == qn).first()
     if not existing:
-        existing = Quarter(year=y, quarter=qn, label=f"Q{qn} {y}", status="draft", is_active=False, is_completed=False)
+        existing = Quarter(year=y, quarter=qn, label=f"Q{qn} {y}", status="draft", is_active=False, is_completed=False, allocation_min=10, allocation_max=50, preferred_max_recipients=3)
         db.add(existing); db.flush()
         for p in db.query(Participant).filter(Participant.is_active == True).all():  # noqa: E712
             db.add(QuarterParticipant(quarter_id=existing.id, participant_id=p.id))

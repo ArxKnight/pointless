@@ -15,6 +15,7 @@ class BulkParticipantResult:
     created: list[Participant]
     duplicates: list[str]
     ignored_blank_lines: int
+    invalid: list[str]
 
 
 def base_slug(value: str) -> str:
@@ -52,12 +53,16 @@ def create_participant(db: Session, display_name: str, slug: str | None = None, 
 def bulk_create_participants(db: Session, text: str) -> BulkParticipantResult:
     created: list[Participant] = []
     duplicates: list[str] = []
+    invalid: list[str] = []
     seen_names: set[str] = set()
     ignored = 0
     for raw in text.splitlines():
         name = raw.strip()
         if not name:
             ignored += 1
+            continue
+        if len(name) > 160:
+            invalid.append(name)
             continue
         key = name.lower()
         existing = db.query(Participant).filter(func.lower(Participant.display_name) == key).first()
@@ -66,7 +71,7 @@ def bulk_create_participants(db: Session, text: str) -> BulkParticipantResult:
             continue
         created.append(create_participant(db, name))
         seen_names.add(key)
-    return BulkParticipantResult(created=created, duplicates=duplicates, ignored_blank_lines=ignored)
+    return BulkParticipantResult(created=created, duplicates=duplicates, ignored_blank_lines=ignored, invalid=invalid)
 
 
 def update_participant_slug(db: Session, participant: Participant, new_slug: str) -> None:

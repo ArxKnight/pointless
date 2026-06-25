@@ -56,11 +56,18 @@ def add_participant(data: ParticipantCreate, db: Session = Depends(get_db), admi
 def add_participants_bulk(data: ParticipantBulkCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     result = bulk_create_participants(db, data.names)
     db.commit()
-    return {
-        "created": [participant_out(db, p) for p in result.created],
-        "duplicates": result.duplicates,
-        "ignored_blank_lines": result.ignored_blank_lines,
-    }
+    created_count = len(result.created)
+    duplicate_count = len(result.duplicates)
+    invalid_count = len(result.invalid)
+    parts = []
+    if created_count: parts.append(f"{created_count} participants created")
+    if duplicate_count: parts.append(f"{duplicate_count} duplicates skipped")
+    if invalid_count: parts.append(f"{invalid_count} invalid entries rejected")
+    if result.ignored_blank_lines: parts.append(f"{result.ignored_blank_lines} blank lines ignored")
+    message = "; ".join(parts) if parts else "No participants were created."
+    if created_count == 0 and duplicate_count:
+        message = "No participants were created because all submitted names already exist."
+    return {"created": [participant_out(db, p) for p in result.created], "duplicates": result.duplicates, "invalid": result.invalid, "ignored_blank_lines": result.ignored_blank_lines, "created_count": created_count, "duplicate_count": duplicate_count, "invalid_count": invalid_count, "message": message}
 
 
 @router.patch("/{participant_id}", response_model=ParticipantOut)

@@ -14,7 +14,7 @@ class TeamBrief(BaseModel):
     class Config: from_attributes=True
 
 class UserOut(BaseModel):
-    id:int; username:str; display_name:str; email:str; is_admin:bool; team_id:int|None=None
+    id:int; username:str; display_name:str; email:str; is_admin:bool; is_super_admin:bool=False; is_active:bool=True; team_id:int|None=None
     class Config: from_attributes=True
 
 class MemberCreate(BaseModel):
@@ -24,17 +24,25 @@ class MemberOut(BaseModel):
     id:int; display_name:str; email:str; active:bool; created_at:datetime
     class Config: from_attributes=True
 class QuarterOut(BaseModel):
-    id:int; year:int; quarter:int; label:str; generated_at:datetime; is_active:bool; is_completed:bool; status:str="draft"; published_at:datetime|None=None
+    id:int; year:int; quarter:int; label:str; generated_at:datetime; is_active:bool; is_completed:bool; status:str="draft"; published_at:datetime|None=None; published_by_admin_id:int|None=None
     class Config: from_attributes=True
 class PlanOut(BaseModel):
     id:int; quarter_id:int; from_member_id:int|None=None; to_member_id:int|None=None; from_participant_id:int|None=None; to_participant_id:int|None=None; from_name:str; to_name:str; amount:int; acknowledged:bool=False
 class GenerateIn(BaseModel): year:int|None=None; quarter:int|None=None; preview:bool=False; seed:int|None=None
 class OverviewOut(BaseModel): total_members:int; active_quarter:str|None; completion_rate:float; total_sent:int; total_planned:int
 class UserAdminOut(BaseModel):
-    id:int; username:str; display_name:str; email:str; is_admin:bool; is_active:bool; created_at:datetime; team_id:int|None=None; team_name:str|None=None
+    id:int; username:str; display_name:str; email:str; is_admin:bool; is_super_admin:bool=False; is_active:bool; created_at:datetime; last_login_at:datetime|None=None; team_id:int|None=None; team_name:str|None=None
     class Config: from_attributes=True
 class UserRoleUpdate(BaseModel): is_admin:bool
 class UserTeamUpdate(BaseModel): team_id:int|None=None
+class UserAdminUpdate(BaseModel):
+    username:str|None=None
+    display_name:str|None=None
+    email:EmailStr|None=None
+    is_admin:bool|None=None
+    is_super_admin:bool|None=None
+    is_active:bool|None=None
+    password:str|None=Field(default=None, min_length=8)
 
 class TeamGroupBase(BaseModel):
     name:str=Field(min_length=1, max_length=120)
@@ -137,7 +145,12 @@ class ParticipantOut(BaseModel):
 class ParticipantBulkOut(BaseModel):
     created:list[ParticipantOut]
     duplicates:list[str]
+    invalid:list[str]=[]
     ignored_blank_lines:int
+    created_count:int=0
+    duplicate_count:int=0
+    invalid_count:int=0
+    message:str=""
 
 class CompatibilityRuleIn(BaseModel):
     from_participant_id:int
@@ -164,14 +177,36 @@ class QuarterCreateIn(BaseModel):
     year:int
     quarter:int=Field(ge=1, le=4)
     label:str|None=None
-    allocation_min:int=5
-    allocation_max:int=25
+    allocation_min:int=10
+    allocation_max:int=50
     preferred_min_recipients:int=2
-    preferred_max_recipients:int=5
+    preferred_max_recipients:int=3
 
 class QuarterParticipantsIn(BaseModel): participant_ids:list[int]
 class QuarterGenerateIn(BaseModel): seed:int|None=None
 class AllocationEditIn(BaseModel): from_participant_id:int; to_participant_id:int; amount:int
+
+class AdminInvitationCreate(BaseModel):
+    invitee_name:str=Field(min_length=1, max_length=160)
+    invitee_email:EmailStr|None=None
+    expires_in_hours:int=Field(default=168, ge=1, le=2160)
+
+class AdminInvitationOut(BaseModel):
+    id:int; invitee_name:str; invitee_email:str|None=None; created_by_admin_id:int|None=None; created_by_name:str|None=None; created_at:datetime; expires_at:datetime; used_at:datetime|None=None; revoked_at:datetime|None=None; status:str
+
+class AdminInvitationCreated(AdminInvitationOut):
+    token:str
+    invitation_url:str
+
+class AdminInvitationPublic(BaseModel):
+    invitee_name:str; invitee_email:str|None=None; expires_at:datetime; status:str
+
+class AdminInvitationAccept(BaseModel):
+    display_name:str=Field(min_length=1)
+    username:str=Field(min_length=1)
+    email:EmailStr
+    password:str=Field(min_length=8)
+    password_confirm:str=Field(min_length=8)
 
 class InstallDatabaseIn(BaseModel):
     host: str = "mysql"

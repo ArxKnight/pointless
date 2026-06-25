@@ -1,3 +1,4 @@
+import itertools
 import random
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
@@ -5,14 +6,33 @@ from dataclasses import dataclass, field
 from app.models import CompatibilityRule, Participant
 
 POINTS_PER_PARTICIPANT = 50
+PERMITTED_AMOUNTS = (10, 15, 20, 25, 30, 40, 45, 50)
+ZERO_OR_PERMITTED_AMOUNTS = (0,) + PERMITTED_AMOUNTS
+# 45 remains a permitted individual value for future configurations, but no
+# positive permitted value can complete 45 to 50, so these are the usable split
+# patterns for the current 50-point target.
+VALID_SPLIT_PATTERNS = tuple(
+    tuple(p) for p in {
+        (50,),
+        (40, 10),
+        (30, 20),
+        (30, 10, 10),
+        (25, 25),
+        (25, 15, 10),
+        (20, 20, 10),
+        (20, 15, 15),
+        (15, 15, 10, 10),
+        (10, 10, 10, 10, 10),
+    }
+)
 
 
 @dataclass
 class GenerationSettings:
-    min_amount: int = 5
-    max_amount: int = 25
+    min_amount: int = 10
+    max_amount: int = 50
     preferred_min_recipients: int = 2
-    preferred_max_recipients: int = 5
+    preferred_max_recipients: int = 3
     seed: int | None = None
     default_allowed: bool = False
 
@@ -22,6 +42,17 @@ class FeasibilityResult:
     valid: bool
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+
+
+def usable_amounts(settings: GenerationSettings | None = None) -> tuple[int, ...]:
+    settings = settings or GenerationSettings()
+    return tuple(a for a in PERMITTED_AMOUNTS if settings.min_amount <= a <= settings.max_amount)
+
+
+def split_patterns(settings: GenerationSettings | None = None) -> list[tuple[int, ...]]:
+    amounts = set(usable_amounts(settings))
+    patterns = [p for p in VALID_SPLIT_PATTERNS if all(a in amounts for a in p)]
+    return sorted(patterns, key=lambda p: (_pattern_penalty(p), len(p), p))
 
 
 def build_allowed_edges(participants: list[Participant], rules: list[CompatibilityRule], default_allowed: bool = False) -> set[tuple[int, int]]:
@@ -38,20 +69,42 @@ def build_allowed_edges(participants: list[Participant], rules: list[Compatibili
     return edges
 
 
+def _component_errors(participants: list[Participant], edges: set[tuple[int, int]]) -> list[str]:
+    """Find weakly disconnected selected components; each must balance internally."""
+    by_id = {p.id: p for p in participants}
+    neighbors: dict[int, set[int]] = {p.id: set() for p in participants}
+    for a, b in edges:
+        neighbors[a].add(b); neighbors[b].add(a)
+    seen: set[int] = set(); errors: list[str] = []
+    for pid in by_id:
+        if pid in seen:
+            continue
+        q = deque([pid]); seen.add(pid); comp = []
+        while q:
+            cur = q.popleft(); comp.append(cur)
+            for nxt in neighbors[cur]:
+                if nxt not in seen:
+                    seen.add(nxt); q.append(nxt)
+        if len(comp) == 1 and len(participants) > 1:
+            errors.append(f"The selected compatibility component containing {by_id[comp[0]].display_name} cannot be balanced.")
+    return errors
+
+
 def validate_feasibility(participants: list[Participant], rules: list[CompatibilityRule], settings: GenerationSettings | None = None, default_allowed: bool | None = None) -> FeasibilityResult:
     settings = settings or GenerationSettings()
     if default_allowed is not None:
         settings.default_allowed = default_allowed
     active = [p for p in participants if p.is_active]
     errors: list[str] = []
+    warnings: list[str] = []
     if len(active) < 2:
         errors.append("At least two active participants are required.")
         return FeasibilityResult(False, errors)
-    if settings.min_amount <= 0 or settings.max_amount <= 0 or settings.min_amount > settings.max_amount:
-        errors.append("Minimum and maximum allocation settings are invalid.")
-    if POINTS_PER_PARTICIPANT % 1 != 0:
-        errors.append("Point total must be a whole number.")
-    ids = {p.id for p in active}
+    if not split_patterns(settings):
+        errors.append("The permitted allocation values cannot produce an exact 50-point total.")
+    amounts = usable_amounts(settings)
+    if 45 in amounts:
+        warnings.append("45 is configured as permitted but cannot be used in any valid 50-point split without a 5-point remainder, so generation will not use it.")
     edges = build_allowed_edges(active, rules, settings.default_allowed)
     for p in active:
         outgoing = [b for a, b in edges if a == p.id]
@@ -59,126 +112,67 @@ def validate_feasibility(participants: list[Participant], rules: list[Compatibil
         if not outgoing:
             errors.append(f"{p.display_name} has no eligible recipients.")
         if not incoming:
-            errors.append(f"{p.display_name} has no eligible givers.")
-        if outgoing and len(outgoing) * settings.max_amount < POINTS_PER_PARTICIPANT:
-            errors.append(f"{p.display_name} cannot send 50 points with the current maximum allocation.")
-        if incoming and len(incoming) * settings.max_amount < POINTS_PER_PARTICIPANT:
-            errors.append(f"{p.display_name} cannot receive 50 points with the current maximum allocation.")
-    if settings.preferred_min_recipients * settings.min_amount > POINTS_PER_PARTICIPANT:
-        errors.append("Preferred minimum recipients and minimum allocation cannot sum to 50.")
-    if settings.preferred_max_recipients * settings.max_amount < POINTS_PER_PARTICIPANT:
-        errors.append("Preferred maximum recipients and maximum allocation cannot sum to 50.")
-    return FeasibilityResult(not errors, errors)
+            errors.append(f"{p.display_name} has no eligible senders.")
+        if outgoing and len(outgoing) < min(len(pattern) for pattern in split_patterns(settings)):
+            pass
+        if outgoing and not any(len(pattern) <= len(outgoing) for pattern in split_patterns(settings)):
+            errors.append(f"{p.display_name} cannot send exactly 50 points using the permitted allocation values and eligible recipients.")
+        if incoming and not any(len(pattern) <= len(incoming) for pattern in split_patterns(settings)):
+            errors.append(f"The current compatibility rules cannot provide {p.display_name} with exactly 50 incoming points using the permitted allocation values.")
+    errors.extend(_component_errors(active, edges))
+    return FeasibilityResult(not errors, errors, warnings)
 
 
-def _candidate_splits(settings: GenerationSettings, n: int) -> list[list[int]]:
-    base = [25, 15, 10] if n >= 4 else [25, 25]
-    if n >= 5:
-        base = [20, 15, 10, 5]
-    variants = [base]
-    if n >= 4:
-        variants += [[25, 10, 10, 5], [20, 20, 5, 5], [25, 15, 5, 5]]
-    clean = []
-    for split in variants:
-        split = [x for x in split if settings.min_amount <= x <= settings.max_amount]
-        if sum(split) == POINTS_PER_PARTICIPANT and len(split) <= n - 1:
-            clean.append(split)
-    return clean or [[POINTS_PER_PARTICIPANT]]
+def _pattern_penalty(pattern: tuple[int, ...]) -> int:
+    penalty = 0
+    if pattern == (50,): penalty += 90
+    if sorted(pattern) == [25, 25]: penalty += 60
+    if len(pattern) == 1: penalty += 40
+    if len(pattern) in (2, 3): penalty -= 20
+    if len(set(pattern)) == 1: penalty += 20
+    return penalty
 
 
-def _ring_plan(participants: list[Participant], edges: set[tuple[int, int]], settings: GenerationSettings) -> list[dict] | None:
-    rng = random.Random(settings.seed)
-    ids = [p.id for p in participants]
-    if len(ids) < 3:
-        return None
-    splits = _candidate_splits(settings, len(ids))
-    for _ in range(700):
-        order = ids[:]
-        rng.shuffle(order)
-        split = rng.choice(splits)
-        offsets = list(range(1, len(ids)))
-        rng.shuffle(offsets)
-        offsets = offsets[: len(split)]
-        rows = []
-        ok = True
-        for i, giver in enumerate(order):
-            for offset, amount in zip(offsets, split):
-                recipient = order[(i + offset) % len(order)]
-                if (giver, recipient) not in edges:
-                    ok = False
-                    break
-                rows.append({"from_participant_id": giver, "to_participant_id": recipient, "amount": amount})
-            if not ok:
-                break
-        if ok:
-            return rows
-    return None
+def _candidate_rows_for_sender(sender: Participant, participants: list[Participant], edges: set[tuple[int, int]], remaining_in: dict[int, int], rng: random.Random, history_pairs: set[tuple[int, int]], existing_rows: list[dict], settings: GenerationSettings | None = None) -> list[list[dict]]:
+    recipients = [p.id for p in participants if (sender.id, p.id) in edges and remaining_in.get(p.id, 0) > 0]
+    candidates: list[tuple[int, list[dict]]] = []
+    used_reverse = {(r["to_participant_id"], r["from_participant_id"]) for r in existing_rows}
+    patterns = split_patterns(settings)
+    rng.shuffle(patterns)
+    for pattern in patterns:
+        if len(pattern) > len(recipients):
+            continue
+        # Use a bounded shuffled subset of combinations to avoid explosive search on larger teams.
+        combos = list(itertools.combinations(recipients, len(pattern)))
+        rng.shuffle(combos)
+        for combo in combos[:160]:
+            perms = set(itertools.permutations(pattern, len(pattern)))
+            perms = list(perms); rng.shuffle(perms)
+            for amounts in perms:
+                if any(remaining_in[to] < amount for to, amount in zip(combo, amounts)):
+                    continue
+                rows = [{"from_participant_id": sender.id, "to_participant_id": to, "amount": amount} for to, amount in zip(combo, amounts)]
+                recipient_set = {r["to_participant_id"] for r in rows}
+                reciprocal = sum(1 for r in rows if (sender.id, r["to_participant_id"]) in used_reverse)
+                repeated = sum(1 for r in rows if (sender.id, r["to_participant_id"]) in history_pairs)
+                score = _pattern_penalty(tuple(sorted(amounts, reverse=True))) + reciprocal * 12 + repeated * 10
+                # Prefer sender choices that do not exactly mirror incoming partner set.
+                if len(recipient_set) == len(rows) and reciprocal == len(rows):
+                    score += 25
+                score += rng.randint(0, 18)
+                candidates.append((score, rows))
+    candidates.sort(key=lambda item: item[0])
+    return [rows for _, rows in candidates[:220]]
 
 
-def _max_flow_plan(participants: list[Participant], edges: set[tuple[int, int]], settings: GenerationSettings) -> list[dict]:
-    unit = settings.min_amount
-    if POINTS_PER_PARTICIPANT % unit != 0 or settings.max_amount % unit != 0:
-        unit = 1
-    need = POINTS_PER_PARTICIPANT // unit
-    cap = settings.max_amount // unit
-    rng = random.Random(settings.seed)
-    senders = [f"s:{p.id}" for p in participants]
-    recipients = [f"r:{p.id}" for p in participants]
-    source, sink = "source", "sink"
-    graph: dict[str, dict[str, int]] = defaultdict(dict)
-
-    def add(u, v, c):
-        graph[u][v] = graph[u].get(v, 0) + c
-        graph[v].setdefault(u, 0)
-
-    for p in participants:
-        add(source, f"s:{p.id}", need)
-        add(f"r:{p.id}", sink, need)
-    edge_list = list(edges)
-    rng.shuffle(edge_list)
-    for a, b in edge_list:
-        add(f"s:{a}", f"r:{b}", cap)
-
-    flow = 0
-    parent: dict[str, str] = {}
-    while True:
-        parent.clear()
-        q = deque([source])
-        parent[source] = ""
-        while q and sink not in parent:
-            u = q.popleft()
-            neighbors = list(graph[u].keys())
-            rng.shuffle(neighbors)
-            for v in neighbors:
-                if v not in parent and graph[u][v] > 0:
-                    parent[v] = u
-                    q.append(v)
-        if sink not in parent:
-            break
-        inc = 10**9
-        v = sink
-        while v != source:
-            u = parent[v]
-            inc = min(inc, graph[u][v])
-            v = u
-        v = sink
-        while v != source:
-            u = parent[v]
-            graph[u][v] -= inc
-            graph[v][u] = graph[v].get(u, 0) + inc
-            v = u
-        flow += inc
-
-    if flow != need * len(participants):
-        raise ValueError("Unable to ensure every participant receives 50 points with the current compatibility rules.")
-
-    rows = []
-    for a, b in edges:
-        used = graph[f"r:{b}"].get(f"s:{a}", 0)
-        if used > 0:
-            amount = used * unit
-            rows.append({"from_participant_id": a, "to_participant_id": b, "amount": amount})
-    return rows
+def _recent_history_pairs(history: list[dict] | None) -> set[tuple[int, int]]:
+    pairs = set()
+    for row in history or []:
+        f = row.get("from_participant_id") or row.get("from_member_id")
+        t = row.get("to_participant_id") or row.get("to_member_id")
+        if f and t:
+            pairs.add((int(f), int(t)))
+    return pairs
 
 
 def generate_distribution(participants: list[Participant], rules: list[CompatibilityRule], settings: GenerationSettings | None = None, history: list[dict] | None = None) -> list[dict]:
@@ -186,41 +180,71 @@ def generate_distribution(participants: list[Participant], rules: list[Compatibi
     active = [p for p in participants if p.is_active]
     feasibility = validate_feasibility(active, rules, settings)
     if not feasibility.valid:
-        raise ValueError("Unable to generate this distribution. " + " ".join(feasibility.errors))
+        raise ValueError("Unable to generate a valid distribution. " + " ".join(feasibility.errors))
     edges = build_allowed_edges(active, rules, settings.default_allowed)
-    plan = _ring_plan(active, edges, settings)
-    if plan is None:
-        plan = _max_flow_plan(active, edges, settings)
-    validate_distribution(plan, active, rules, settings)
-    return sorted(plan, key=lambda r: (r["from_participant_id"], r["to_participant_id"]))
+    rng = random.Random(settings.seed)
+    history_pairs = _recent_history_pairs(history)
+    # Harder senders first: those with fewer eligible recipients/incoming capacity.
+    sender_order = active[:]
+    sender_order.sort(key=lambda p: (sum(1 for a, _ in edges if a == p.id), rng.random()))
+    remaining_in = {p.id: POINTS_PER_PARTICIPANT for p in active}
+    rows: list[dict] = []
+
+    def backtrack(index: int) -> bool:
+        if index == len(sender_order):
+            return all(v == 0 for v in remaining_in.values())
+        sender = sender_order[index]
+        candidates = _candidate_rows_for_sender(sender, active, edges, remaining_in, rng, history_pairs, rows, settings)
+        for candidate in candidates:
+            for r in candidate:
+                remaining_in[r["to_participant_id"]] -= r["amount"]
+            rows.extend(candidate)
+            # Prune: every future recipient with remaining need must still have a future sender.
+            future_senders = {p.id for p in sender_order[index + 1:]}
+            possible = True
+            for pid, need in remaining_in.items():
+                if need > 0 and not any((sid, pid) in edges for sid in future_senders):
+                    possible = False; break
+            if possible and backtrack(index + 1):
+                return True
+            del rows[-len(candidate):]
+            for r in candidate:
+                remaining_in[r["to_participant_id"]] += r["amount"]
+        return False
+
+    # Try several deterministic order variants; bounded, no unbounded random retry.
+    for attempt in range(8):
+        if attempt:
+            rng.shuffle(sender_order)
+            remaining_in = {p.id: POINTS_PER_PARTICIPANT for p in active}
+            rows.clear()
+        if backtrack(0):
+            validate_distribution(rows, active, rules, settings)
+            return sorted(rows, key=lambda r: (r["from_participant_id"], r["to_participant_id"]))
+    raise ValueError("Unable to generate a valid distribution because the current compatibility graph cannot be balanced with the permitted allocation values.")
 
 
 def validate_distribution(plan: list[dict], participants: list[Participant], rules: list[CompatibilityRule], settings: GenerationSettings | None = None) -> bool:
     settings = settings or GenerationSettings()
     ids = {p.id for p in participants if p.is_active}
     edges = build_allowed_edges([p for p in participants if p.is_active], rules, settings.default_allowed)
-    sent = defaultdict(int)
-    received = defaultdict(int)
-    pairs = set()
+    permitted = set(PERMITTED_AMOUNTS)
+    sent = defaultdict(int); received = defaultdict(int); pairs = set()
     for row in plan:
-        f = int(row["from_participant_id"])
-        t = int(row["to_participant_id"])
-        amount = int(row["amount"])
+        f = int(row["from_participant_id"]); t = int(row["to_participant_id"]); amount = int(row["amount"])
         if f not in ids or t not in ids:
             raise ValueError("Plan contains an unknown or inactive participant.")
         if f == t:
             raise ValueError("A participant cannot give points to themselves.")
         if (f, t) not in edges:
             raise ValueError("Plan uses a blocked or missing compatibility rule.")
-        if amount <= 0 or amount != row["amount"]:
-            raise ValueError("Allocation amounts must be positive whole numbers.")
+        if amount not in permitted:
+            raise ValueError(f"Allocation amount {amount} is not one of the permitted values: {', '.join(map(str, PERMITTED_AMOUNTS))}.")
         if amount < settings.min_amount or amount > settings.max_amount:
             raise ValueError("Allocation amount is outside the configured minimum/maximum.")
         if (f, t) in pairs:
             raise ValueError("Duplicate allocation pair in plan.")
-        pairs.add((f, t))
-        sent[f] += amount
-        received[t] += amount
+        pairs.add((f, t)); sent[f] += amount; received[t] += amount
     for p in ids:
         if sent[p] != POINTS_PER_PARTICIPANT:
             raise ValueError(f"Participant {p} sends {sent[p]}, not 50.")

@@ -21,6 +21,8 @@ def login(data: LoginIn, request: Request, response: Response, db: Session = Dep
     if not user:
         bucket.append(now); raise HTTPException(status_code=401, detail="Invalid username or password")
     token = create_access_token(user)
+    user.last_login_at = datetime.utcnow()
+    db.commit()
     response.set_cookie("access_token", token, httponly=True, samesite="lax", secure=settings.cookie_secure, max_age=settings.access_token_expire_minutes*60)
     return {"user": UserOut.model_validate(user)}
 

@@ -1,4 +1,5 @@
 from .entities import (
+    AdminInvitation,
     CompatibilityGroup,
     CompatibilityGroupMember,
     CompatibilityRule,

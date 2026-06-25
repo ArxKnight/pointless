@@ -57,10 +57,11 @@ def ensure_participant_schema(engine: Engine) -> None:
                 "status": "status VARCHAR(20) DEFAULT 'draft'",
                 "created_at": "created_at DATETIME NULL",
                 "published_at": "published_at DATETIME NULL",
-                "allocation_min": "allocation_min INTEGER DEFAULT 5",
-                "allocation_max": "allocation_max INTEGER DEFAULT 25",
+                "allocation_min": "allocation_min INTEGER DEFAULT 10",
+                "allocation_max": "allocation_max INTEGER DEFAULT 50",
                 "preferred_min_recipients": "preferred_min_recipients INTEGER DEFAULT 2",
-                "preferred_max_recipients": "preferred_max_recipients INTEGER DEFAULT 5",
+                "preferred_max_recipients": "preferred_max_recipients INTEGER DEFAULT 3",
+                "published_by_admin_id": "published_by_admin_id INTEGER NULL",
             }
             for name, ddl in additions.items():
                 if name not in columns:
@@ -84,3 +85,23 @@ def ensure_participant_schema(engine: Engine) -> None:
             if "to_participant_id" not in columns:
                 _add_column(conn, "points_ledger", "to_participant_id INTEGER NULL")
                 _create_index(conn, "points_ledger", "ix_points_ledger_to_participant_id", "to_participant_id", dialect)
+
+
+def ensure_admin_schema(engine: Engine) -> None:
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    dialect = engine.dialect.name
+    if "users" in tables:
+        columns = {c["name"] for c in inspector.get_columns("users")}
+        with engine.begin() as conn:
+            if "is_super_admin" not in columns:
+                _add_column(conn, "users", "is_super_admin BOOLEAN DEFAULT 0")
+                _create_index(conn, "users", "ix_users_is_super_admin", "is_super_admin", dialect)
+                conn.execute(text("UPDATE users SET is_super_admin = 1 WHERE is_admin = 1 AND id = (SELECT MIN(id) FROM users WHERE is_admin = 1)"))
+            if "last_login_at" not in columns:
+                _add_column(conn, "users", "last_login_at DATETIME NULL")
+    if "admin_invitations" not in tables:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE admin_invitations (id INTEGER PRIMARY KEY AUTO_INCREMENT, token_hash VARCHAR(128) NOT NULL UNIQUE, invitee_name VARCHAR(160) NOT NULL, invitee_email VARCHAR(255) NULL, created_by_admin_id INTEGER NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, used_at DATETIME NULL, used_by_admin_id INTEGER NULL, revoked_at DATETIME NULL)" if dialect == "mysql" else "CREATE TABLE IF NOT EXISTS admin_invitations (id INTEGER PRIMARY KEY, token_hash VARCHAR(128) NOT NULL UNIQUE, invitee_name VARCHAR(160) NOT NULL, invitee_email VARCHAR(255) NULL, created_by_admin_id INTEGER NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, used_at DATETIME NULL, used_by_admin_id INTEGER NULL, revoked_at DATETIME NULL)"))
+            _create_index(conn, "admin_invitations", "ix_admin_invitations_token_hash", "token_hash", dialect)
+            _create_index(conn, "admin_invitations", "ix_admin_invitations_created_by_admin_id", "created_by_admin_id", dialect)

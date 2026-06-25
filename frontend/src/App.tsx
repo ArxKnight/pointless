@@ -11,6 +11,7 @@ import {Overview} from './pages/Overview';
 import {History} from './pages/History';
 import {Quarters} from './pages/Quarters';
 import {Settings} from './pages/Settings';
+import {AdminInvite} from './pages/AdminInvite';
 
 type InstallStatus={installed:boolean;database_configured:boolean};
 
@@ -37,6 +38,7 @@ export default function App(){
     <BrowserRouter>
       <Routes>
         <Route path="tree/:slug" element={<MyTree/>}/>
+        <Route path="admin-invite/:token" element={<AdminInvite/>}/>
         {!user
           ? <Route path="*" element={<Login setUser={setUser}/>}/>
           : <Route element={<Layout user={user} setUser={setUser}/>}>
