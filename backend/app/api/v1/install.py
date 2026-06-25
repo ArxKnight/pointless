@@ -8,6 +8,7 @@ from app.runtime_config import install_status, is_installed, save_install_config
 from app.schemas.api import InstallDatabaseIn, InstallIn
 from app.services.auth_service import hash_password
 from app.services.member_sync import sync_active_users_to_members
+from app.services.quarter_service import auto_generate_quarter
 
 router = APIRouter(prefix="/install", tags=["install"])
 REQUIRED_TABLES = ["users", "department_members", "quarters", "giving_plans", "points_ledger"]
@@ -147,6 +148,7 @@ def setup(data: InstallIn):
                 session.commit()
             sync_active_users_to_members(session)
             session.commit()
+            auto_generate_quarter(session)
         finally:
             session.close()
     except HTTPException:
