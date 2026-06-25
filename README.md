@@ -20,7 +20,7 @@ Prebuilt single-container app image on Docker Hub:
 
 ```text
 arxknight/quarterly-points-app:latest
-arxknight/quarterly-points-app:0.1.2
+arxknight/quarterly-points-app:0.1.3
 ```
 
 The app container includes both:
@@ -39,7 +39,7 @@ docker run -d --name quarterly-points-app \
   arxknight/quarterly-points-app:latest
 ```
 
-FastAPI is also reachable directly on container port `8000` for API debugging, but the UI should normally be accessed through port `80`.
+Container port `8000` also serves the same React UI as a fallback as well as the API, so Docker platforms that auto-publish port `8000` will still open the installer instead of a JSON 404.
 
 On first boot the logs include Uvicorn's standard `Application startup complete` message. That only means the web server has started; it does **not** mean the app installer has been completed. Check `GET /api/health`: a clean first boot returns `{"ok": true, "installed": false}` until you finish the web installer.
 

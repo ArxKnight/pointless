@@ -1,6 +1,10 @@
 from fastapi import FastAPI
 import logging
 import sys
+from pathlib import Path
+from fastapi import HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import Base, SessionLocal, configure_engine
@@ -18,6 +22,8 @@ app.include_router(members.router, prefix="/api")
 app.include_router(quarters.router, prefix="/api")
 app.include_router(plans.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
+
+FRONTEND_ROOT = Path("/usr/share/nginx/html")
 
 @app.on_event("startup")
 def startup():
@@ -41,3 +47,19 @@ def startup():
 
 @app.get("/api/health")
 def health(): return {"ok":True, "installed": is_installed()}
+
+if (FRONTEND_ROOT / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_ROOT / "assets"), name="assets")
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def frontend_fallback(full_path: str):
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="Not Found")
+    requested = (FRONTEND_ROOT / full_path).resolve()
+    root = FRONTEND_ROOT.resolve()
+    if requested.is_file() and root in requested.parents:
+        return FileResponse(requested)
+    index = FRONTEND_ROOT / "index.html"
+    if index.exists():
+        return FileResponse(index)
+    raise HTTPException(status_code=404, detail="Frontend assets not found")
