@@ -14,26 +14,20 @@ services:
       timeout: 5s
       retries: 20
 
-  backend:
-    build: ./backend
+  app:
+    image: arxknight/quarterly-points-app:latest
+    build: .
     environment:
       SECRET_KEY: ${SECRET_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
       APP_CONFIG_PATH: /data/config.json
     volumes:
       - app_data:/data
-    depends_on:
-      mysql:
-        condition: service_healthy
-    expose:
-      - "8000"
-
-  frontend:
-    build: ./frontend
     ports:
       - "${FRONTEND_PORT:-80}:80"
     depends_on:
-      - backend
+      mysql:
+        condition: service_healthy
 
 volumes:
   mysql_data:
