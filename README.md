@@ -2,7 +2,7 @@
 
 Dockerised FastAPI + MySQL + React app.
 
-## Run
+## Run from source
 
 ```bash
 docker compose up -d --build
@@ -13,6 +13,17 @@ If port 80 is busy:
 ```bash
 FRONTEND_PORT=8088 docker compose up -d --build
 ```
+
+## Published Docker images
+
+Prebuilt images are available on Docker Hub:
+
+```text
+arxknight/quarterly-points-backend:latest
+arxknight/quarterly-points-frontend:latest
+```
+
+Versioned `0.1.0` tags are also published for both images.
 
 Open the frontend and complete the first-run installer. With the bundled Compose MySQL service, use:
 
