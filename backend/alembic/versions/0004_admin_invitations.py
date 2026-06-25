@@ -23,7 +23,7 @@ def upgrade():
     if not _has_column(bind, 'users', 'is_super_admin'):
         op.add_column('users', sa.Column('is_super_admin', sa.Boolean(), nullable=False, server_default=sa.false()))
         op.create_index('ix_users_is_super_admin', 'users', ['is_super_admin'])
-        bind.execute(sa.text("UPDATE users SET is_super_admin = 1 WHERE is_admin = 1 AND id = (SELECT MIN(id) FROM users WHERE is_admin = 1)"))
+    op.execute("UPDATE users SET is_super_admin = 1 WHERE is_admin = 1 AND id = (SELECT first_admin.id FROM (SELECT MIN(id) AS id FROM users WHERE is_admin = 1) AS first_admin) AND NOT EXISTS (SELECT existing_admin.id FROM (SELECT id FROM users WHERE is_super_admin = 1 AND is_active = 1 LIMIT 1) AS existing_admin)")
     if not _has_column(bind, 'users', 'last_login_at'):
         op.add_column('users', sa.Column('last_login_at', sa.DateTime(), nullable=True))
     if not _has_column(bind, 'quarters', 'published_by_admin_id'):

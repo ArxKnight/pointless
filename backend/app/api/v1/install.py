@@ -8,7 +8,7 @@ from app.runtime_config import install_status, is_installed, save_install_config
 from app.schemas.api import InstallDatabaseIn, InstallIn
 from app.services.auth_service import hash_password
 from app.services.participant_service import backfill_participants_from_department_members
-from app.services.schema_upgrade import ensure_team_schema, ensure_participant_schema
+from app.services.schema_upgrade import ensure_team_schema, ensure_participant_schema, ensure_admin_schema
 
 router = APIRouter(prefix="/install", tags=["install"])
 REQUIRED_TABLES = ["users", "department_members", "quarters", "giving_plans", "points_ledger"]
@@ -117,6 +117,7 @@ def setup(data: InstallIn):
         Base.metadata.create_all(bind=engine)
         ensure_team_schema(engine)
         ensure_participant_schema(engine)
+        ensure_admin_schema(engine)
         with engine.begin() as connection:
             connection.execute(text("SELECT 1"))
         session = SessionLocal()

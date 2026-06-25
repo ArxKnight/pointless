@@ -97,7 +97,7 @@ def ensure_admin_schema(engine: Engine) -> None:
             if "is_super_admin" not in columns:
                 _add_column(conn, "users", "is_super_admin BOOLEAN DEFAULT 0")
                 _create_index(conn, "users", "ix_users_is_super_admin", "is_super_admin", dialect)
-                conn.execute(text("UPDATE users SET is_super_admin = 1 WHERE is_admin = 1 AND id = (SELECT MIN(id) FROM users WHERE is_admin = 1)"))
+            conn.execute(text("UPDATE users SET is_super_admin = 1 WHERE is_admin = 1 AND id = (SELECT first_admin.id FROM (SELECT MIN(id) AS id FROM users WHERE is_admin = 1) AS first_admin) AND NOT EXISTS (SELECT existing_admin.id FROM (SELECT id FROM users WHERE is_super_admin = 1 AND is_active = 1 LIMIT 1) AS existing_admin)"))
             if "last_login_at" not in columns:
                 _add_column(conn, "users", "last_login_at DATETIME NULL")
     if "admin_invitations" not in tables:
