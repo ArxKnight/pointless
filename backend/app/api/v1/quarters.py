@@ -59,6 +59,11 @@ def replace_quarter_participants(db: Session, q: Quarter, ids: list[int]) -> Non
     db.query(QuarterParticipant).filter_by(quarter_id=q.id).delete()
     for pid in ids:
         db.add(QuarterParticipant(quarter_id=q.id, participant_id=pid))
+    # Production sessions deliberately run with autoflush=False, so make the
+    # selected participant rows visible before generation immediately queries
+    # quarter_participants(). Without this, Generate/Publish can see 0 selected
+    # participants even though the request contained the selected IDs.
+    db.flush()
 
 
 def plan_row(p: GivingPlan):

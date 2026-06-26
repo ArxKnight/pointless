@@ -127,7 +127,33 @@ def test_generate_activate_quarter_creates_published_plan_without_draft_state(db
     assert q.status == "published"
     assert q.status != "draft"
     assert len(result["plans"]) > 0
+    assert db.query(QuarterParticipant).filter_by(quarter_id=q.id).count() == len(participants)
     assert db.query(GivingPlan).filter_by(quarter_id=q.id).count() == len(result["plans"])
+
+
+def test_generate_activate_flushes_selected_participants_when_session_autoflush_is_disabled():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, autoflush=False)
+    db = Session()
+    try:
+        admin = User(username="admin", display_name="Admin", email="admin@example.com", password_hash=hash_password("password"), is_admin=True, is_super_admin=True, is_active=True)
+        db.add(admin)
+        participants = add_participants(db, ["Adam", "Alex", "Charlie", "John", "Marijus", "Uzzy", "Billy"])
+        for a in participants:
+            for b in participants:
+                if a.id != b.id:
+                    db.add(CompatibilityRule(from_participant_id=a.id, to_participant_id=b.id, is_allowed=True))
+        db.commit()
+
+        result = generate_activate_quarter(QuarterGenerateActivateIn(year=2026, quarter=3, label="Q3 2026", participant_ids=[p.id for p in participants], seed=7), db, admin)
+        q = db.query(Quarter).filter_by(year=2026, quarter=3).one()
+
+        assert q.status == "published"
+        assert db.query(QuarterParticipant).filter_by(quarter_id=q.id).count() == len(participants)
+        assert len(result["plans"]) > 0
+    finally:
+        db.close()
 
 
 def test_generator_creates_compatible_exact_50_uneven_whole_number_plan(db):
