@@ -175,6 +175,110 @@ def _recent_history_pairs(history: list[dict] | None) -> set[tuple[int, int]]:
     return pairs
 
 
+class _FlowEdge:
+    def __init__(self, to: int, rev: int, cap: int, meta: tuple[int, int] | None = None):
+        self.to = to
+        self.rev = rev
+        self.cap = cap
+        self.original_cap = cap
+        self.meta = meta
+
+
+def _add_flow_edge(graph: list[list[_FlowEdge]], fr: int, to: int, cap: int, meta: tuple[int, int] | None = None) -> None:
+    graph[fr].append(_FlowEdge(to, len(graph[to]), cap, meta))
+    graph[to].append(_FlowEdge(fr, len(graph[fr]) - 1, 0, None))
+
+
+def _max_flow(graph: list[list[_FlowEdge]], source: int, sink: int) -> int:
+    flow = 0
+    while True:
+        level = [-1] * len(graph)
+        queue = deque([source])
+        level[source] = 0
+        while queue:
+            node = queue.popleft()
+            for edge in graph[node]:
+                if edge.cap > 0 and level[edge.to] < 0:
+                    level[edge.to] = level[node] + 1
+                    queue.append(edge.to)
+        if level[sink] < 0:
+            return flow
+        it = [0] * len(graph)
+
+        def dfs(node: int, pushed: int) -> int:
+            if node == sink:
+                return pushed
+            while it[node] < len(graph[node]):
+                edge = graph[node][it[node]]
+                if edge.cap > 0 and level[node] + 1 == level[edge.to]:
+                    got = dfs(edge.to, min(pushed, edge.cap))
+                    if got:
+                        edge.cap -= got
+                        graph[edge.to][edge.rev].cap += got
+                        return got
+                it[node] += 1
+            return 0
+
+        while True:
+            pushed = dfs(source, 10**9)
+            if not pushed:
+                break
+            flow += pushed
+
+
+def _flow_distribution(active: list[Participant], edges: set[tuple[int, int]], history_pairs: set[tuple[int, int]], rng: random.Random, settings: GenerationSettings) -> list[dict] | None:
+    """Fast bounded solver for larger quarters.
+
+    It treats each 10 points as one flow unit, balances 5 outgoing and 5 incoming
+    units per participant, and aggregates units per directed pair. The resulting
+    amounts are always permitted defaults (10/20/30/40/50), respect compatibility,
+    and avoid the exponential sender-by-sender backtracking that made 14-person
+    quarters appear stuck at "solver starting".
+    """
+    if not (settings.min_amount <= 10 <= settings.max_amount):
+        return None
+    participants = active[:]
+    rng.shuffle(participants)
+    total_units = len(participants) * (POINTS_PER_PARTICIPANT // 10)
+    id_to_sender = {p.id: i for i, p in enumerate(participants)}
+    id_to_receiver = {p.id: len(participants) + i for i, p in enumerate(participants)}
+    source = len(participants) * 2
+    sink = source + 1
+
+    # Prefer spreading allocations across recipients first, then relax if the
+    # compatibility graph is tight. Three 10-point units per pair keeps most rows
+    # at 10/20/30 while still allowing sparse-but-valid graphs to succeed.
+    preferred_cap = max(1, min(3, settings.max_amount // 10))
+    relaxed_cap = max(1, min(5, settings.max_amount // 10))
+    for pair_cap in tuple(dict.fromkeys((preferred_cap, relaxed_cap))):
+        graph: list[list[_FlowEdge]] = [[] for _ in range(sink + 1)]
+        for p in participants:
+            _add_flow_edge(graph, source, id_to_sender[p.id], 5)
+            _add_flow_edge(graph, id_to_receiver[p.id], sink, 5)
+        ordered_edges = [(a, b) for a, b in edges if a in id_to_sender and b in id_to_receiver]
+        rng.shuffle(ordered_edges)
+        ordered_edges.sort(key=lambda pair: (pair in history_pairs, pair[0], pair[1]))
+        for a, b in ordered_edges:
+            _add_flow_edge(graph, id_to_sender[a], id_to_receiver[b], pair_cap, (a, b))
+        if _max_flow(graph, source, sink) != total_units:
+            continue
+        rows = []
+        for p in participants:
+            for edge in graph[id_to_sender[p.id]]:
+                if edge.meta is None:
+                    continue
+                units_used = edge.original_cap - edge.cap
+                if units_used > 0:
+                    rows.append({"from_participant_id": edge.meta[0], "to_participant_id": edge.meta[1], "amount": units_used * 10})
+        validate_distribution(rows, active, [], GenerationSettings(min_amount=settings.min_amount, max_amount=settings.max_amount, default_allowed=True))
+        # Re-run validation against the real rule graph for clearer errors if a
+        # future change accidentally lets an invalid edge through.
+        if any((r["from_participant_id"], r["to_participant_id"]) not in edges for r in rows):
+            raise ValueError("Plan uses a blocked or missing compatibility rule.")
+        return sorted(rows, key=lambda r: (r["from_participant_id"], r["to_participant_id"]))
+    return None
+
+
 def generate_distribution(participants: list[Participant], rules: list[CompatibilityRule], settings: GenerationSettings | None = None, history: list[dict] | None = None) -> list[dict]:
     settings = settings or GenerationSettings()
     active = [p for p in participants if p.is_active]
@@ -184,6 +288,12 @@ def generate_distribution(participants: list[Participant], rules: list[Compatibi
     edges = build_allowed_edges(active, rules, settings.default_allowed)
     rng = random.Random(settings.seed)
     history_pairs = _recent_history_pairs(history)
+
+    fast_rows = _flow_distribution(active, edges, history_pairs, rng, settings)
+    if fast_rows is not None:
+        validate_distribution(fast_rows, active, rules, settings)
+        return fast_rows
+
     # Harder senders first: those with fewer eligible recipients/incoming capacity.
     sender_order = active[:]
     sender_order.sort(key=lambda p: (sum(1 for a, _ in edges if a == p.id), rng.random()))
