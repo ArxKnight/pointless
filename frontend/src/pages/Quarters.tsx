@@ -4,6 +4,11 @@ import {Participant,Plan,Quarter,QuarterDetail} from '../types/api';
 
 type WizardMode='create'|'edit'|null;
 type GenerationStep={label:string;progress:number}|null;
+const GENERATE_PUBLISH_TIMEOUT_MS=60000;
+const GENERATE_PUBLISH_POLL_MS=1500;
+const GENERATE_PUBLISH_MAX_POLLS=40;
+const wait=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+function isAbortError(e:any){return e?.name==='AbortError'}
 
 export function Quarters(){
  const [quarters,setQuarters]=useState<Quarter[]>([]);
@@ -25,16 +30,21 @@ export function Quarters(){
  async function startEdit(q:Quarter){try{const d=await api<QuarterDetail>(`/quarters/${q.id}`);setEditQuarterId(q.id);setSelected(d.participants.map(p=>p.id));setForm({year:q.year,quarter:q.quarter,label:q.label});setGenerationStep(null);setWizard('edit');setMsg('')}catch(e:any){setMsg(e.message)}}
  async function openQuarter(q:Quarter){try{const d=await api<QuarterDetail>(`/quarters/${q.id}`);setDetail(d);setSelected(d.participants.map(p=>p.id));setMsg('')}catch(e:any){setMsg(e.message)}}
  async function confirmDeleteQuarter(){if(!deleteTarget)return;setDeleting(true);setMsg('');try{await del(`/quarters/${deleteTarget.id}`);setMsg(`${deleteTarget.label} deleted.`);if(detail?.quarter.id===deleteTarget.id)setDetail(null);setDeleteTarget(null);await load()}catch(e:any){setMsg(e.message)}finally{setDeleting(false)}}
- async function generateAndPublish(){setBusy(true);setMsg('');try{if(selected.length<2)throw new Error('Select at least two participants.');let q:Quarter;setGenerationStep({label:'Saving quarter details and participant selection...',progress:15});if(wizard==='edit'&&editQuarterId){q=await patch<Quarter>(`/quarters/${editQuarterId}`,{...form,participant_ids:selected});}else{q=await post<Quarter>('/quarters',{...form});await api(`/quarters/${q.id}/participants`,{method:'PUT',body:JSON.stringify({participant_ids:selected})});}
+ async function waitForPublishedQuarter(qid:number){for(let i=0;i<GENERATE_PUBLISH_MAX_POLLS;i++){await wait(GENERATE_PUBLISH_POLL_MS);const d=await api<QuarterDetail>(`/quarters/${qid}`);if(d.quarter.status==='published'&&d.plan.length>0)return d;setGenerationStep({label:'Generation finished on the server. Checking the published quarter...',progress:Math.min(90,70+i*2)})}throw new Error('The quarter may have generated, but the page could not confirm it. Refresh Manage Quarters and open the quarter to check its status.')}
+ async function generatePublishWithTimeout(qid:number){const controller=new AbortController();const timeout=window.setTimeout(()=>controller.abort(),GENERATE_PUBLISH_TIMEOUT_MS);try{return await api<{quarter:Quarter;plans:Plan[]}>(`/quarters/${qid}/generate-publish`,{method:'POST',body:JSON.stringify({}),signal:controller.signal})}catch(e:any){if(!isAbortError(e))throw e;setGenerationStep({label:'The server is still finishing or the response was delayed. Checking the quarter status...',progress:70});const recovered=await waitForPublishedQuarter(qid);return{quarter:recovered.quarter,plans:recovered.plan}}finally{window.clearTimeout(timeout)}}
+ async function generateAndPublish(){setBusy(true);setMsg('');let progressTimer:number|undefined;try{if(selected.length<2)throw new Error('Select at least two participants.');let q:Quarter;setGenerationStep({label:'Saving quarter details and participant selection...',progress:15});if(wizard==='edit'&&editQuarterId){q=await patch<Quarter>(`/quarters/${editQuarterId}`,{...form,participant_ids:selected});}else{q=await post<Quarter>('/quarters',{...form});await api(`/quarters/${q.id}/participants`,{method:'PUT',body:JSON.stringify({participant_ids:selected})});}
    setGenerationStep({label:'Generating the balanced points distribution...',progress:45});
-   const result=await post<{quarter:Quarter;plans:Plan[]}>(`/quarters/${q.id}/generate-publish`,{});
+   progressTimer=window.setInterval(()=>setGenerationStep(prev=>prev&&prev.progress<80?{label:'Generating the balanced points distribution...',progress:Math.min(prev.progress+3,80)}:prev),2500);
+   const result=await generatePublishWithTimeout(q.id);
+   if(progressTimer){window.clearInterval(progressTimer);progressTimer=undefined}
    setGenerationStep({label:'Publishing quarter and refreshing the page data...',progress:85});
    const refreshed=await api<QuarterDetail>(`/quarters/${result.quarter.id}`);
-   await load();
+   setGenerationStep({label:'Done. Closing this window...',progress:100});
    setDetail(refreshed);
    setWizard(null);
+   await load();
    setMsg(`${result.quarter.label} generated and published. It will appear on public participant trees during ${result.quarter.label}.`);
- }catch(e:any){setMsg(e.message)}finally{setBusy(false);setGenerationStep(null)}}
+ }catch(e:any){setMsg(e.message||'Quarter generation failed.')}finally{if(progressTimer)window.clearInterval(progressTimer);setBusy(false);setGenerationStep(null)}}
  async function saveEditOnly(){if(!editQuarterId)return;setBusy(true);try{const q=await patch<Quarter>(`/quarters/${editQuarterId}`,{...form,participant_ids:selected});setWizard(null);setEditQuarterId(null);setMsg(`${q.label} updated. Use Open if you want to view the quarter preview.`);await load()}catch(e:any){setMsg(e.message)}finally{setBusy(false)}}
  async function validate(){if(!detail)return;const r=await post<any>(`/quarters/${detail.quarter.id}/validate-draft`);setMsg(r.valid?'Draft is valid and ready to publish.':r.errors.join(' '))}
  async function generate(){if(!detail)return;setBusy(true);setMsg('');try{const r=await post<any>(`/quarters/${detail.quarter.id}/generate`,{});setMsg('Quarter generated. Review before publishing.');setDetail({quarter:r.quarter,participants:detail.participants,plan:r.plans});await load()}catch(e:any){setMsg(e.message)}finally{setBusy(false)}}
