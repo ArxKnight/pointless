@@ -2,13 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import GivingPlan, Participant, ParticipantSlugRedirect, Quarter, QuarterParticipant
+from app.models import GivingPlan, Participant, ParticipantSlugRedirect, QuarterParticipant
+from app.services.quarter_lookup import current_published_quarter
 
 router = APIRouter(prefix="/public", tags=["public"])
-
-
-def current_published_quarter(db: Session) -> Quarter | None:
-    return db.query(Quarter).filter(Quarter.status == "published").order_by(Quarter.published_at.desc().nullslast(), Quarter.id.desc()).first()
 
 
 def public_tree_payload(db: Session, slug: str) -> dict:

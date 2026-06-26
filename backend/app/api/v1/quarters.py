@@ -7,6 +7,7 @@ from app.models import CompatibilityRule, GivingPlan, Participant, PointsLedger,
 from app.schemas.api import AllocationEditIn, GenerateIn, QuarterCreateIn, QuarterOut, QuarterParticipantsIn, QuarterGenerateIn
 from app.services.auth_service import get_current_user, require_admin
 from app.services.participant_generator import GenerationSettings, generate_distribution, validate_distribution, validate_feasibility
+from app.services.quarter_lookup import current_published_quarter
 
 router = APIRouter(prefix="/quarters", tags=["quarters"])
 
@@ -85,7 +86,7 @@ def create_quarter(data: QuarterCreateIn, db: Session = Depends(get_db), admin: 
 
 @router.get("/active")
 def get_active(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    q = db.query(Quarter).filter(Quarter.status == "published").order_by(Quarter.published_at.desc().nullslast(), Quarter.id.desc()).first()
+    q = current_published_quarter(db)
     if not q:
         return {"quarter": None, "plans": [], "members": []}
     participants = quarter_participants(db, q.id)
@@ -122,7 +123,7 @@ def overview_tree_payload(db: Session, q: Quarter | None):
 
 @router.get("/active/overview-tree")
 def active_overview_tree(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    q = db.query(Quarter).filter(Quarter.status == "published").order_by(Quarter.published_at.desc().nullslast(), Quarter.id.desc()).first()
+    q = current_published_quarter(db)
     participants = quarter_participants(db, q.id) if q else []
     plans = db.query(GivingPlan).filter(GivingPlan.quarter_id == q.id).all() if q else []
     sent = {p.id: 0 for p in participants}; received = {p.id: 0 for p in participants}

@@ -3,12 +3,14 @@ from datetime import datetime
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
 from app.models import CompatibilityRule, GivingPlan, Participant, Quarter, QuarterParticipant, User
 from app.services.auth_service import hash_password
 from app.services.participant_service import bulk_create_participants, create_participant, slugify_name
+from app.services.quarter_lookup import current_published_quarter_query
 from app.services.participant_generator import (
     GenerationSettings,
     build_allowed_edges,
@@ -75,6 +77,13 @@ def test_slug_generation_adds_numeric_suffix(db):
     db.commit()
 
     assert slugify_name("Alex", db) == "alex-3"
+
+
+def test_current_published_quarter_query_is_mysql_compatible(db):
+    sql = str(current_published_quarter_query(db).limit(1).statement.compile(dialect=mysql.dialect()))
+
+    assert "NULLS LAST" not in sql.upper()
+    assert "ORDER BY quarters.published_at DESC, quarters.id DESC" in sql
 
 
 def test_compatibility_blocks_self_and_disallowed_edges(db):

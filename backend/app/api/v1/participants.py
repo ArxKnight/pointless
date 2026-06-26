@@ -5,16 +5,17 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import GivingPlan, Participant, Quarter, QuarterParticipant, User
+from app.models import GivingPlan, Participant, QuarterParticipant, User
 from app.schemas.api import ParticipantBulkCreate, ParticipantBulkOut, ParticipantCreate, ParticipantOut, ParticipantUpdate
 from app.services.auth_service import require_admin
 from app.services.participant_service import bulk_create_participants, create_participant, update_participant_slug
+from app.services.quarter_lookup import current_published_quarter
 
 router = APIRouter(prefix="/participants", tags=["participants"])
 
 
 def participant_out(db: Session, p: Participant, request: Request | None = None) -> dict:
-    published = db.query(Quarter).filter(Quarter.status == "published").order_by(Quarter.published_at.desc().nullslast(), Quarter.id.desc()).first()
+    published = current_published_quarter(db)
     included = False
     if published:
         included = db.query(QuarterParticipant).filter_by(quarter_id=published.id, participant_id=p.id).first() is not None
