@@ -57,18 +57,18 @@ def totals(plan):
 
 def test_bulk_created_participants_are_returned_by_standard_list_endpoint_immediately(db):
     owner = admin_user(db)
-    result = bulk_create_participants(db, "Adam\nAlex\n\nAlex\nJohn Smith")
+    result = bulk_create_participants(db, "Participant D\nParticipant A\n\nParticipant A\nParticipant F")
     db.commit()
     listed = list_participants(include_inactive=True, db=db, admin=owner)
     names = [p["display_name"] for p in listed]
-    assert [p.display_name for p in result.created] == ["Adam", "Alex", "John Smith"]
-    assert names == ["Adam", "Alex", "John Smith"]
-    assert result.duplicates == ["Alex"]
+    assert [p.display_name for p in result.created] == ["Participant D", "Participant A", "Participant F"]
+    assert names == ["Participant A", "Participant D", "Participant F"]
+    assert result.duplicates == ["Participant A"]
     assert result.ignored_blank_lines == 1
 
 
 def test_generator_uses_only_permitted_fixed_amounts_and_never_45_for_50_total(db):
-    participants = add_complete_compatibility(db, ["Adam", "Alex", "Billy", "Charlie", "John", "Marijus", "Uzzy"])
+    participants = add_complete_compatibility(db, ["Participant D", "Participant A", "Participant E", "Participant B", "Participant G", "Participant H", "Participant C"])
     plan = generate_distribution(participants, db.query(CompatibilityRule).all(), settings=GenerationSettings(seed=42))
     sent, received = totals(plan)
     assert all(sent[p.id] == 50 for p in participants)
@@ -81,7 +81,7 @@ def test_generator_uses_only_permitted_fixed_amounts_and_never_45_for_50_total(d
 
 
 def test_generator_seed_is_deterministic_and_different_seeds_can_vary(db):
-    participants = add_complete_compatibility(db, ["Adam", "Alex", "Billy", "Charlie", "John", "Marijus"])
+    participants = add_complete_compatibility(db, ["Participant D", "Participant A", "Participant E", "Participant B", "Participant G", "Participant H"])
     rules = db.query(CompatibilityRule).all()
     a = generate_distribution(participants, rules, settings=GenerationSettings(seed=1))
     b = generate_distribution(participants, rules, settings=GenerationSettings(seed=1))
@@ -91,31 +91,31 @@ def test_generator_seed_is_deterministic_and_different_seeds_can_vary(db):
 
 
 def test_invalid_amounts_and_duplicate_edges_are_rejected(db):
-    participants = add_complete_compatibility(db, ["Alex", "Charlie", "Uzzy"])
-    alex, charlie, uzzy = participants
+    participants = add_complete_compatibility(db, ["Participant A", "Participant B", "Participant C"])
+    participant_a, participant_b, participant_c = participants
     with pytest.raises(ValueError, match="permitted"):
         validate_distribution([
-            {"from_participant_id": alex.id, "to_participant_id": charlie.id, "amount": 35},
-            {"from_participant_id": charlie.id, "to_participant_id": uzzy.id, "amount": 50},
-            {"from_participant_id": uzzy.id, "to_participant_id": alex.id, "amount": 50},
+            {"from_participant_id": participant_a.id, "to_participant_id": participant_b.id, "amount": 35},
+            {"from_participant_id": participant_b.id, "to_participant_id": participant_c.id, "amount": 50},
+            {"from_participant_id": participant_c.id, "to_participant_id": participant_a.id, "amount": 50},
         ], participants, db.query(CompatibilityRule).all())
 
 
 def test_main_admin_invitation_single_use_and_revocable(db):
     owner = admin_user(db)
-    created = create_invitation(AdminInvitationCreate(invitee_name="Alex", invitee_email="alex@example.com", expires_in_hours=24), db, owner)
+    created = create_invitation(AdminInvitationCreate(invitee_name="Participant A", invitee_email="user_a@example.com", expires_in_hours=24), db, owner)
     assert created["invitation_url"].startswith("/admin-invite/")
     assert "token" not in list_invitations(db, owner)[0]
     token = created["token"]
     public = public_invitation(token, db)
-    assert public["invitee_name"] == "Alex"
-    accepted = accept_invitation(token, AdminInvitationAccept(display_name="Alex", username="alex", email="alex@example.com", password="password123", password_confirm="password123"), db)
-    assert accepted["user"]["username"] == "alex"
+    assert public["invitee_name"] == "Participant A"
+    accepted = accept_invitation(token, AdminInvitationAccept(display_name="Participant A", username="participant_a", email="user_a@example.com", password="password123", password_confirm="password123"), db)
+    assert accepted["user"]["username"] == "participant_a"
     with pytest.raises(HTTPException) as reused:
-        accept_invitation(token, AdminInvitationAccept(display_name="Alex2", username="alex2", email="alex2@example.com", password="password123", password_confirm="password123"), db)
+        accept_invitation(token, AdminInvitationAccept(display_name="User A2", username="participant_a2", email="user_a2@example.com", password="password123", password_confirm="password123"), db)
     assert reused.value.status_code == 400
 
-    second = create_invitation(AdminInvitationCreate(invitee_name="Billy", expires_in_hours=24), db, owner)
+    second = create_invitation(AdminInvitationCreate(invitee_name="Participant E", expires_in_hours=24), db, owner)
     revoke_invitation(second["id"], db, owner)
     with pytest.raises(HTTPException) as revoked:
         public_invitation(second["token"], db)

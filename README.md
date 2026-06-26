@@ -10,7 +10,7 @@ An administrator manages quarterly points distributions:
 2. Configure who can reasonably give points to whom.
 3. Select participants for a quarter.
 4. Generate and activate a balanced distribution.
-5. Participants open their public Giving Tree page at `/tree/{slug}`.
+5. Participants open their public Giving Tree page at `/{slug}`.
 
 Only administrators need login accounts. Participants do **not** need usernames, passwords, emails, roles, or app accounts.
 
@@ -105,9 +105,9 @@ Administrators can manage participants from **Settings → Participants**:
 Example slugs:
 
 ```text
-Alex       -> /tree/alex
-John Smith -> /tree/john-smith
-Alex       -> /tree/alex-2
+Participant A -> /participant-a
+Participant F -> /participant-f
+Participant A -> /participant-a-2
 ```
 
 Renaming a participant does not automatically change their slug. If the slug is edited, the old slug is retained as a redirect record where practical.
@@ -173,15 +173,15 @@ Feasibility validation reports clear errors such as:
 Every participant has a public page:
 
 ```text
-/tree/{slug}
+/{slug}
 ```
 
 Examples:
 
 ```text
-/tree/alex
-/tree/charlie
-/tree/john-smith
+/participant-a
+/participant-b
+/participant-f
 ```
 
 The public page shows only the participant's outgoing allocations for the current published quarter:
@@ -232,7 +232,7 @@ GET    /api/quarters/{id}
 Public endpoint:
 
 ```text
-GET /api/public/tree/{slug}
+GET /api/public/{slug}
 ```
 
 ## Migration

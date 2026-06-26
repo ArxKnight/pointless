@@ -18,7 +18,7 @@ def session():
     return sessionmaker(bind=engine)()
 
 
-def make_user(username="alex", email="alex@example.com", display_name="Alex", admin=False, team_id=None):
+def make_user(username="participant_a", email="user_a@example.com", display_name="Participant A", admin=False, team_id=None):
     return User(username=username, email=email, display_name=display_name, password_hash=hash_password("password123"), is_admin=admin, is_active=True, team_id=team_id)
 
 
