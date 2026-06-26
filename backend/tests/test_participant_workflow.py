@@ -10,7 +10,8 @@ from app.database import Base
 from app.models import CompatibilityRule, GivingPlan, Participant, Quarter, QuarterParticipant, User
 from app.services.auth_service import hash_password
 from app.services.participant_service import bulk_create_participants, create_participant, slugify_name
-from app.services.quarter_lookup import current_published_quarter_query
+from app.services import quarter_lookup
+from app.services.quarter_lookup import current_published_quarter, current_published_quarter_query
 from app.services.participant_generator import (
     GenerationSettings,
     build_allowed_edges,
@@ -208,3 +209,24 @@ def test_public_tree_not_included_mentions_next_scheduled_quarter(db):
     assert payload["status"] == "not_included"
     assert payload["next_quarter"]["label"] == "Q3 2026"
     assert "next scheduled for Q3 2026" in payload["message"]
+
+
+def test_future_published_quarter_waits_until_calendar_quarter_is_live(db, monkeypatch):
+    monkeypatch.setattr(quarter_lookup, "current_calendar_quarter", lambda now=None: (2026, 2))
+    alex, charlie = add_participants(db, ["Alex", "Charlie"])
+    q2 = Quarter(year=2026, quarter=2, label="Q2 2026", status="published", is_active=True, is_completed=False, published_at=datetime.utcnow())
+    q3 = Quarter(year=2026, quarter=3, label="Q3 2026", status="published", is_active=True, is_completed=False, published_at=datetime.utcnow())
+    db.add_all([q2, q3])
+    db.flush()
+    for q in (q2, q3):
+        db.add_all([
+            QuarterParticipant(quarter_id=q.id, participant_id=alex.id),
+            QuarterParticipant(quarter_id=q.id, participant_id=charlie.id),
+            GivingPlan(quarter_id=q.id, from_participant_id=alex.id, to_participant_id=charlie.id, amount=50),
+        ])
+    db.commit()
+
+    assert current_published_quarter(db).id == q2.id
+    payload = public_tree_payload(db, "alex")
+    assert payload["status"] == "ok"
+    assert payload["quarter"]["label"] == "Q2 2026"

@@ -7,7 +7,7 @@ from app.models import CompatibilityRule, GivingPlan, Participant, PointsLedger,
 from app.schemas.api import AllocationEditIn, GenerateIn, QuarterCreateIn, QuarterOut, QuarterParticipantsIn, QuarterGenerateIn, QuarterUpdateIn
 from app.services.auth_service import get_current_user, require_admin
 from app.services.participant_generator import GenerationSettings, generate_distribution, validate_distribution, validate_feasibility
-from app.services.quarter_lookup import current_published_quarter
+from app.services.quarter_lookup import current_published_quarter, current_calendar_quarter
 
 router = APIRouter(prefix="/quarters", tags=["quarters"])
 
@@ -17,11 +17,6 @@ def next_quarter(db):
     if not last:
         now = datetime.utcnow(); return now.year, ((now.month - 1) // 3) + 1
     return (last.year + 1, 1) if last.quarter == 4 else (last.year, last.quarter + 1)
-
-
-def current_calendar_quarter() -> tuple[int, int]:
-    now = datetime.utcnow()
-    return now.year, ((now.month - 1) // 3) + 1
 
 
 def is_past_quarter(q: Quarter) -> bool:
@@ -272,17 +267,38 @@ def validate_draft(quarter_id: int, db: Session = Depends(get_db), admin: User =
     return {"valid": True, "errors": [], "warnings": []}
 
 
+def _publish_quarter(db: Session, q: Quarter, admin: User) -> None:
+    year, quarter = current_calendar_quarter()
+    q.status = "published"
+    q.is_completed = False
+    q.published_at = datetime.utcnow()
+    q.published_by_admin_id = admin.id
+    for published in db.query(Quarter).filter(Quarter.status == "published", Quarter.is_completed == False).all():  # noqa: E712
+        published.is_active = published.year == year and published.quarter == quarter
+    q.is_active = q.year == year and q.quarter == quarter
+
+
 @router.post("/{quarter_id}/publish")
 def publish_quarter(quarter_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     q = db.get(Quarter, quarter_id)
     if not q: raise HTTPException(404, "Quarter not found")
     validation = validate_draft(quarter_id, db, admin)
     if not validation["valid"]: raise HTTPException(400, validation["errors"][0])
-    for old in db.query(Quarter).filter(Quarter.status == "published").all():
-        old.is_active = False
-    q.status = "published"; q.is_active = True; q.is_completed = False; q.published_at = datetime.utcnow(); q.published_by_admin_id = admin.id
+    _publish_quarter(db, q, admin)
     db.commit(); db.refresh(q)
     return {"quarter": QuarterOut.model_validate(q), "plans": plan_rows(db, q.id)}
+
+
+@router.post("/{quarter_id}/generate-publish")
+def generate_publish_quarter(quarter_id: int, data: QuarterGenerateIn = QuarterGenerateIn(), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    generated = generate_quarter(quarter_id, data, db, admin)
+    q = db.get(Quarter, quarter_id)
+    if not q: raise HTTPException(404, "Quarter not found")
+    validation = validate_draft(quarter_id, db, admin)
+    if not validation["valid"]: raise HTTPException(400, validation["errors"][0])
+    _publish_quarter(db, q, admin)
+    db.commit(); db.refresh(q)
+    return {"quarter": QuarterOut.model_validate(q), "plans": plan_rows(db, q.id), "validation": generated.get("validation", {"valid": True, "errors": [], "warnings": []})}
 
 
 @router.post("/regenerate")
