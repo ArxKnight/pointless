@@ -39,6 +39,25 @@ def test_x_forwarded_for_uses_rightmost_public_address():
     assert client_ip_from_headers(headers, "172.18.0.3") == "81.201.139.20"
 
 
+def test_cloudflare_connecting_ip_overrides_cloudflare_edge_address():
+    headers = {
+        "cf-connecting-ip": "81.201.139.20",
+        "x-forwarded-for": "172.69.79.10",
+        "x-real-ip": "172.69.79.10",
+    }
+
+    assert client_ip_from_headers(headers, "172.18.0.3") == "81.201.139.20"
+
+
+def test_invalid_cloudflare_header_falls_back_to_forwarded_for():
+    headers = {
+        "cf-connecting-ip": "not-an-ip",
+        "x-forwarded-for": "81.201.139.20, 172.18.0.2",
+    }
+
+    assert client_ip_from_headers(headers, "172.18.0.3") == "81.201.139.20"
+
+
 def test_reverse_dns_ukfast_detection(monkeypatch):
     monkeypatch.setattr(access_control, "ANS_KNOWN_NETWORKS", tuple())
     monkeypatch.setattr(access_control.socket, "gethostbyaddr", lambda ip: ("8.8.8.8.srvlist.ukfast.net", [], [ip]))

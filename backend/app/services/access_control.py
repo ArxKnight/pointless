@@ -15,6 +15,17 @@ _ip_cache: dict[str, tuple[float, bool, str]] = {}
 
 
 def client_ip_from_headers(headers: dict, fallback: str | None = None) -> str | None:
+    # Cloudflare terminates TLS in front of the app and connects onward from a
+    # Cloudflare edge IP. nginx then overwrites X-Forwarded-For with that edge
+    # IP, so the only reliable end-user address available at the app boundary is
+    # CF-Connecting-IP (or True-Client-IP on some Cloudflare plans).
+    cloudflare_ip = headers.get("cf-connecting-ip") or headers.get("CF-Connecting-IP")
+    if parse_ip(cloudflare_ip) is not None:
+        return cloudflare_ip
+    true_client_ip = headers.get("true-client-ip") or headers.get("True-Client-IP")
+    if parse_ip(true_client_ip) is not None:
+        return true_client_ip
+
     forwarded = headers.get("x-forwarded-for") or headers.get("X-Forwarded-For")
     if forwarded:
         # Prefer the right-most public address: nginx/proxies append to the chain,
