@@ -2,6 +2,7 @@ from collections import defaultdict
 from datetime import datetime
 
 import pytest
+from starlette.background import BackgroundTasks
 from sqlalchemy import create_engine
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import sessionmaker
@@ -20,7 +21,7 @@ from app.services.participant_generator import (
     validate_feasibility,
 )
 from app.api.v1.public import public_tree_payload
-from app.api.v1.quarters import generate_activate_quarter
+from app.api.v1.quarters import generate_activate_quarter, start_generate_activate_quarter
 from app.schemas.api import QuarterGenerateActivateIn
 
 
@@ -154,6 +155,25 @@ def test_generate_activate_flushes_selected_participants_when_session_autoflush_
         assert len(result["plans"]) > 0
     finally:
         db.close()
+
+
+def test_generate_activate_route_queues_background_work_and_reuses_generating_quarter(db):
+    admin = User(username="admin", display_name="Admin", email="admin@example.com", password_hash=hash_password("password"), is_admin=True, is_super_admin=True, is_active=True)
+    db.add(admin)
+    participants = add_participants(db, ["Adam", "Alex", "Charlie", "John", "Marijus", "Uzzy", "Billy"])
+    db.commit()
+
+    tasks = BackgroundTasks()
+    data = QuarterGenerateActivateIn(year=2026, quarter=3, label="Q3 2026", participant_ids=[p.id for p in participants], seed=7)
+    first = start_generate_activate_quarter(data, tasks, db, admin)
+    second = start_generate_activate_quarter(data, BackgroundTasks(), db, admin)
+    q = db.query(Quarter).filter_by(year=2026, quarter=3).one()
+
+    assert q.status == "generating"
+    assert first["validation"]["pending"] is True
+    assert second["validation"]["pending"] is True
+    assert len(tasks.tasks) == 1
+    assert db.query(QuarterParticipant).filter_by(quarter_id=q.id).count() == len(participants)
 
 
 def test_generator_creates_compatible_exact_50_uneven_whole_number_plan(db):

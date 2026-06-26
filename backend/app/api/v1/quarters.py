@@ -1,10 +1,11 @@
 from datetime import datetime
 import logging
 import sys
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models import CompatibilityRule, GivingPlan, Participant, PointsLedger, Quarter, QuarterParticipant, User
 from app.schemas.api import AllocationEditIn, GenerateIn, QuarterCreateIn, QuarterGenerateActivateIn, QuarterOut, QuarterParticipantsIn, QuarterGenerateIn, QuarterUpdateIn
 from app.services.auth_service import get_current_user, require_admin
@@ -283,18 +284,72 @@ def _generate_plan_rows(db: Session, q: Quarter, seed: int | None, admin: User) 
     return {"valid": True, "errors": [], "warnings": feasibility.warnings}
 
 
-@router.post("/generate-activate")
-def generate_activate_quarter(data: QuarterGenerateActivateIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    assert_not_existing_quarter(db, data.year, data.quarter)
-    q = Quarter(year=data.year, quarter=data.quarter, label=data.label or f"Q{data.quarter} {data.year}", status="generating", is_active=False, is_completed=False, allocation_min=10, allocation_max=50, preferred_min_recipients=data.preferred_min_recipients, preferred_max_recipients=data.preferred_max_recipients)
-    db.add(q); db.flush()
+def _run_generate_activate_background(quarter_id: int, seed: int | None, admin_id: int) -> None:
+    db = SessionLocal()
     try:
+        q = db.get(Quarter, quarter_id)
+        admin = db.get(User, admin_id)
+        if not q or not admin:
+            qlog("error", "Quarter background generation could not start: quarter_id=%s admin_id=%s", quarter_id, admin_id)
+            return
+        validation = _generate_plan_rows(db, q, seed, admin)
+        _publish_quarter(db, q, admin)
+        db.commit()
+        qlog("info", "Quarter background generate-activate complete: quarter_id=%s label=%s status=%s active=%s", q.id, q.label, q.status, q.is_active)
+    except ValueError as exc:
+        db.rollback()
+        q = db.get(Quarter, quarter_id)
+        if q:
+            q.status = "failed"
+            q.is_active = False
+            db.commit()
+        qlog("error", "Quarter background generation failed validation: quarter_id=%s error=%s", quarter_id, exc)
+    except Exception as exc:
+        db.rollback()
+        q = db.get(Quarter, quarter_id)
+        if q:
+            q.status = "failed"
+            q.is_active = False
+            db.commit()
+        logger.exception("Quarter background generation crashed: quarter_id=%s", quarter_id)
+        qlog("error", "Quarter background generation crashed: quarter_id=%s error=%s", quarter_id, exc)
+    finally:
+        db.close()
+
+
+@router.post("/generate-activate")
+def start_generate_activate_quarter(data: QuarterGenerateActivateIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    return _generate_activate_quarter(data, db, admin, background_tasks)
+
+
+def generate_activate_quarter(data: QuarterGenerateActivateIn, db: Session, admin: User):
+    return _generate_activate_quarter(data, db, admin, None)
+
+
+def _generate_activate_quarter(data: QuarterGenerateActivateIn, db: Session, admin: User, background_tasks: BackgroundTasks | None):
+    existing = db.query(Quarter).filter(Quarter.year == data.year, Quarter.quarter == data.quarter).first()
+    if existing:
+        if existing.status == "generating":
+            return {"quarter": QuarterOut.model_validate(existing), "plans": plan_rows(db, existing.id), "validation": {"valid": False, "pending": True, "errors": [], "warnings": []}}
+        raise HTTPException(409, f"Q{data.quarter} {data.year} is already made. Delete the existing quarter first before making it again.")
+    q = Quarter(year=data.year, quarter=data.quarter, label=data.label or f"Q{data.quarter} {data.year}", status="generating", is_active=False, is_completed=False, allocation_min=10, allocation_max=50, preferred_min_recipients=data.preferred_min_recipients, preferred_max_recipients=data.preferred_max_recipients)
+    try:
+        db.add(q); db.flush()
         replace_quarter_participants(db, q, data.participant_ids)
+        if background_tasks is not None:
+            db.commit(); db.refresh(q)
+            qlog("info", "Quarter background generation queued: quarter_id=%s label=%s year=%s quarter=%s admin_id=%s", q.id, q.label, q.year, q.quarter, admin.id)
+            background_tasks.add_task(_run_generate_activate_background, q.id, data.seed, admin.id)
+            return {"quarter": QuarterOut.model_validate(q), "plans": [], "validation": {"valid": False, "pending": True, "errors": [], "warnings": []}}
         validation = _generate_plan_rows(db, q, data.seed, admin)
         _publish_quarter(db, q, admin)
         db.commit(); db.refresh(q)
         qlog("info", "Quarter generate-activate complete: quarter_id=%s label=%s status=%s active=%s", q.id, q.label, q.status, q.is_active)
         return {"quarter": QuarterOut.model_validate(q), "plans": plan_rows(db, q.id), "validation": validation}
+    except (IntegrityError, OperationalError) as exc:
+        db.rollback()
+        logger.exception("Quarter generate-activate database failure: year=%s quarter=%s label=%s", data.year, data.quarter, data.label)
+        raise HTTPException(409, f"Q{data.quarter} {data.year} could not be queued because another generation or database lock is using that quarter. Refresh Manage Quarters and try again if it is not already generating.") from exc
     except HTTPException:
         db.rollback(); logger.exception("Quarter generate-activate failed: year=%s quarter=%s label=%s", data.year, data.quarter, data.label); raise
     except ValueError as exc:
