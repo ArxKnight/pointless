@@ -56,9 +56,10 @@ export function MyTree(){
 
 function mapPublicError(message:string){
   if(/not found/i.test(message))return 'Giving Tree not found.';
-  if(/no giving distribution/i.test(message))return 'No giving distribution is currently available.';
-  if(/not have a giving tree/i.test(message))return 'This participant does not have a Giving Tree for the current quarter.';
+  if(/not currently participating/i.test(message))return message;
+  if(/no giving distribution/i.test(message))return 'No active quarterly tree is currently available.';
+  if(/not have a giving tree/i.test(message))return 'This participant is not currently participating in the active quarterly tree.';
   return 'The Giving Tree could not be loaded. Please try again.';
 }
-function statusMessage(status:string){return status==='no_published_quarter'?'No giving distribution is currently available.':status==='not_included'?'This participant does not have a Giving Tree for the current quarter.':'The Giving Tree could not be loaded. Please try again.'}
+function statusMessage(status:string){return status==='not_currently_participating'?'This participant is not currently participating in any quarterly tree.':status==='no_published_quarter'?'No active quarterly tree is currently available.':status==='not_included'?'This participant is not currently participating in the active quarterly tree.':'The Giving Tree could not be loaded. Please try again.'}
 function PublicShell({children}:{children:React.ReactNode}){return <main className="min-h-screen bg-bg px-4 py-8 text-slate-100 print:bg-white print:text-black">{children}</main>}

@@ -1,3 +1,4 @@
+from sqlalchemy import or_
 from sqlalchemy.orm import Query, Session
 
 from app.models import Quarter
@@ -12,8 +13,8 @@ def current_published_quarter_query(db: Session) -> Query:
     """
     return (
         db.query(Quarter)
-        .filter(Quarter.status == "published")
-        .order_by(Quarter.published_at.desc(), Quarter.id.desc())
+        .filter(or_(Quarter.status == "published", (Quarter.is_active == True) & (Quarter.published_at.isnot(None))), Quarter.is_completed == False)  # noqa: E712
+        .order_by(Quarter.is_active.desc(), Quarter.published_at.desc(), Quarter.id.desc())
     )
 
 

@@ -83,7 +83,7 @@ def test_current_published_quarter_query_is_mysql_compatible(db):
     sql = str(current_published_quarter_query(db).limit(1).statement.compile(dialect=mysql.dialect()))
 
     assert "NULLS LAST" not in sql.upper()
-    assert "ORDER BY quarters.published_at DESC, quarters.id DESC" in sql
+    assert "ORDER BY quarters.is_active DESC, quarters.published_at DESC, quarters.id DESC" in sql
 
 
 def test_compatibility_blocks_self_and_disallowed_edges(db):
@@ -172,3 +172,39 @@ def test_public_tree_only_returns_published_quarter(db):
 def test_public_tree_unknown_slug(db):
     with pytest.raises(LookupError):
         public_tree_payload(db, "missing")
+
+
+def test_public_tree_uses_active_published_quarter_even_when_status_is_legacy(db):
+    alex, charlie = add_participants(db, ["Alex", "Charlie"])
+    active = Quarter(year=2026, quarter=2, label="Q2 2026", status="draft", is_active=True, is_completed=False, published_at=datetime.utcnow())
+    db.add(active)
+    db.flush()
+    db.add_all([
+        QuarterParticipant(quarter_id=active.id, participant_id=alex.id),
+        QuarterParticipant(quarter_id=active.id, participant_id=charlie.id),
+        GivingPlan(quarter_id=active.id, from_participant_id=alex.id, to_participant_id=charlie.id, amount=50),
+    ])
+    db.commit()
+
+    payload = public_tree_payload(db, "alex")
+
+    assert payload["status"] == "ok"
+    assert payload["quarter"]["label"] == "Q2 2026"
+    assert payload["allocations"] == [{"recipient_name": "Charlie", "amount": 50}]
+
+
+def test_public_tree_not_included_mentions_next_scheduled_quarter(db):
+    alex, charlie = add_participants(db, ["Alex", "Charlie"])
+    current = Quarter(year=2026, quarter=2, label="Q2 2026", status="published", is_active=True, is_completed=False, published_at=datetime.utcnow())
+    next_q = Quarter(year=2026, quarter=3, label="Q3 2026", status="draft", is_active=False, is_completed=False)
+    db.add_all([current, next_q])
+    db.flush()
+    db.add(QuarterParticipant(quarter_id=current.id, participant_id=charlie.id))
+    db.add(QuarterParticipant(quarter_id=next_q.id, participant_id=alex.id))
+    db.commit()
+
+    payload = public_tree_payload(db, "alex")
+
+    assert payload["status"] == "not_included"
+    assert payload["next_quarter"]["label"] == "Q3 2026"
+    assert "next scheduled for Q3 2026" in payload["message"]

@@ -2,10 +2,33 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import GivingPlan, Participant, ParticipantSlugRedirect, QuarterParticipant
+from app.models import GivingPlan, Participant, ParticipantSlugRedirect, Quarter, QuarterParticipant
 from app.services.quarter_lookup import current_published_quarter
 
 router = APIRouter(prefix="/public", tags=["public"])
+
+
+def current_calendar_quarter() -> tuple[int, int]:
+    from datetime import datetime
+    now = datetime.utcnow()
+    return now.year, ((now.month - 1) // 3) + 1
+
+
+def next_scheduled_quarter(db: Session, participant_id: int, exclude_quarter_id: int | None = None) -> Quarter | None:
+    year, quarter = current_calendar_quarter()
+    query = (
+        db.query(Quarter)
+        .join(QuarterParticipant, QuarterParticipant.quarter_id == Quarter.id)
+        .filter(QuarterParticipant.participant_id == participant_id)
+        .filter((Quarter.year > year) | ((Quarter.year == year) & (Quarter.quarter >= quarter)))
+    )
+    if exclude_quarter_id is not None:
+        query = query.filter(Quarter.id != exclude_quarter_id)
+    return query.order_by(Quarter.year.asc(), Quarter.quarter.asc(), Quarter.id.asc()).first()
+
+
+def quarter_public(q: Quarter | None) -> dict | None:
+    return {"label": q.label, "year": q.year, "quarter": q.quarter} if q else None
 
 
 def public_tree_payload(db: Session, slug: str) -> dict:
@@ -20,10 +43,18 @@ def public_tree_payload(db: Session, slug: str) -> dict:
         raise LookupError("Giving tree not found.")
     quarter = current_published_quarter(db)
     if not quarter:
-        return {"status": "no_published_quarter", "message": "No giving distribution is currently available.", "participant": {"display_name": participant.display_name, "slug": participant.slug}, "quarter": None, "allocations": [], "total_allocated": 0}
+        next_quarter = next_scheduled_quarter(db, participant.id)
+        if next_quarter:
+            return {"status": "not_currently_participating", "message": f"{participant.display_name} is not currently participating in an active quarterly tree. They are next scheduled for {next_quarter.label}.", "participant": {"display_name": participant.display_name, "slug": participant.slug}, "quarter": None, "next_quarter": quarter_public(next_quarter), "allocations": [], "total_allocated": 0}
+        return {"status": "not_currently_participating", "message": f"{participant.display_name} is not currently participating in any quarterly tree.", "participant": {"display_name": participant.display_name, "slug": participant.slug}, "quarter": None, "next_quarter": None, "allocations": [], "total_allocated": 0}
     included = db.query(QuarterParticipant).filter_by(quarter_id=quarter.id, participant_id=participant.id).first()
     if not included:
-        return {"status": "not_included", "message": "This participant does not have a giving tree for the current quarter.", "participant": {"display_name": participant.display_name, "slug": participant.slug}, "quarter": {"label": quarter.label, "year": quarter.year, "quarter": quarter.quarter}, "allocations": [], "total_allocated": 0}
+        next_quarter = next_scheduled_quarter(db, participant.id, exclude_quarter_id=quarter.id)
+        if next_quarter:
+            message = f"{participant.display_name} is not currently participating in the active quarterly tree. They are next scheduled for {next_quarter.label}."
+        else:
+            message = f"{participant.display_name} is not currently participating in any quarterly tree."
+        return {"status": "not_included", "message": message, "participant": {"display_name": participant.display_name, "slug": participant.slug}, "quarter": quarter_public(quarter), "next_quarter": quarter_public(next_quarter), "allocations": [], "total_allocated": 0}
     rows = db.query(GivingPlan).filter(GivingPlan.quarter_id == quarter.id, GivingPlan.from_participant_id == participant.id).all()
     allocations = [{"recipient_name": r.to_participant.display_name if r.to_participant else "Unknown", "amount": r.amount} for r in rows]
     return {
