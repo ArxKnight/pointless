@@ -208,6 +208,11 @@ class AdminInvitationCreate(BaseModel):
     # 0 means never expires; otherwise choose an explicit period such as 24, 48, 168, 720 or 8760 hours.
     expires_in_hours:int=Field(default=168, ge=0, le=876000)
 
+    @field_validator("invitee_email", mode="before")
+    @classmethod
+    def blank_email_is_optional(cls, value):
+        return None if value == "" else value
+
 class AdminInvitationOut(BaseModel):
     id:int; invitee_name:str; invitee_email:str|None=None; created_by_admin_id:int|None=None; created_by_name:str|None=None; created_at:datetime; expires_at:datetime; used_at:datetime|None=None; revoked_at:datetime|None=None; status:str; expires_label:str|None=None
 

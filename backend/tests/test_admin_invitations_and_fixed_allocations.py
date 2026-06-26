@@ -106,6 +106,7 @@ def test_main_admin_invitation_single_use_and_revocable(db):
     created = create_invitation(AdminInvitationCreate(invitee_name="Participant A", invitee_email="user_a@example.com", expires_in_hours=24), db, owner)
     assert created["invitation_url"].startswith("/admin-invite/")
     assert "token" not in list_invitations(db, owner)[0]
+    assert "invitation_url" not in list_invitations(db, owner)[0]
     token = created["token"]
     public = public_invitation(token, db)
     assert public["invitee_name"] == "Participant A"
@@ -120,6 +121,21 @@ def test_main_admin_invitation_single_use_and_revocable(db):
     with pytest.raises(HTTPException) as revoked:
         public_invitation(second["token"], db)
     assert revoked.value.status_code == 400
+
+
+def test_admin_invitation_allows_blank_optional_email_and_returns_one_time_url(db):
+    owner = admin_user(db)
+
+    created = create_invitation(AdminInvitationCreate(invitee_name="new_admin", invitee_email="", expires_in_hours=168), db, owner)
+
+    assert created["invitee_name"] == "new_admin"
+    assert created["invitee_email"] is None
+    assert created["invitation_url"].startswith("/admin-invite/")
+    assert created["token"] in created["invitation_url"]
+    listed = list_invitations(db, owner)[0]
+    assert listed["invitee_email"] is None
+    assert "token" not in listed
+    assert "invitation_url" not in listed
 
 
 def test_last_active_super_admin_cannot_be_removed(db):

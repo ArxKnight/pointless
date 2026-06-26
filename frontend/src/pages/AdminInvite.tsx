@@ -10,7 +10,7 @@ export function AdminInvite(){
   const [error,setError]=useState('');
   const [message,setMessage]=useState('');
   const [form,setForm]=useState({display_name:'',username:'',email:'',password:'',password_confirm:''});
-  useEffect(()=>{document.title='Accept administrator invitation'; if(!token)return; api<InviteInfo>(`/admin-invitations/${token}`).then(i=>{setInfo(i);setForm(f=>({...f,display_name:i.invitee_name,email:i.invitee_email||''}))}).catch(e=>setError(e.message||'Invalid invitation link'))},[token]);
+  useEffect(()=>{document.title='Accept administrator invitation'; if(!token)return; api<InviteInfo>(`/admin-invitations/${token}`).then(i=>{setInfo(i);setForm(f=>({...f,display_name:i.invitee_name,username:i.invitee_name,email:i.invitee_email||''}))}).catch(e=>setError(e.message||'Invalid invitation link'))},[token]);
   async function submit(e:React.FormEvent){
     e.preventDefault(); setError(''); setMessage('');
     try{await post(`/admin-invitations/${token}/accept`,form); setMessage('Administrator account created. You can now log in.');}
