@@ -28,6 +28,16 @@ def next_quarter(db):
     return (last.year + 1, 1) if last.quarter == 4 else (last.year, last.quarter + 1)
 
 
+def remove_legacy_draft_status(db: Session, quarters: list[Quarter]) -> None:
+    changed = False
+    for q in quarters:
+        if q.status == "draft":
+            q.status = "published"
+            changed = True
+    if changed:
+        db.commit()
+
+
 def is_past_quarter(q: Quarter) -> bool:
     year, quarter = current_calendar_quarter()
     return (q.year, q.quarter) < (year, quarter)
@@ -92,13 +102,17 @@ def list_quarters(include_history: bool = False, db: Session = Depends(get_db), 
     if not include_history:
         year, quarter = current_calendar_quarter()
         query = query.filter((Quarter.year > year) | ((Quarter.year == year) & (Quarter.quarter >= quarter)))
-    return query.order_by(Quarter.year.desc(), Quarter.quarter.desc()).all()
+    rows = query.order_by(Quarter.year.desc(), Quarter.quarter.desc()).all()
+    remove_legacy_draft_status(db, rows)
+    return rows
 
 
 @router.get("/history", response_model=list[QuarterOut])
 def list_historical_quarters(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     year, quarter = current_calendar_quarter()
-    return db.query(Quarter).filter((Quarter.year < year) | ((Quarter.year == year) & (Quarter.quarter < quarter))).order_by(Quarter.year.desc(), Quarter.quarter.desc()).all()
+    rows = db.query(Quarter).filter((Quarter.year < year) | ((Quarter.year == year) & (Quarter.quarter < quarter))).order_by(Quarter.year.desc(), Quarter.quarter.desc()).all()
+    remove_legacy_draft_status(db, rows)
+    return rows
 
 
 @router.post("", response_model=QuarterOut)
@@ -396,6 +410,8 @@ def generate(data: GenerateIn, db: Session = Depends(get_db), admin: User = Depe
 def detail(quarter_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     q = db.get(Quarter, quarter_id)
     if not q: raise HTTPException(404, "Quarter not found")
+    remove_legacy_draft_status(db, [q])
+    db.refresh(q)
     participants = quarter_participants(db, q.id)
     return {"quarter": QuarterOut.model_validate(q), "participants": [{"id": p.id, "display_name": p.display_name, "slug": p.slug} for p in participants], "plan": plan_rows(db, q.id)}
 
