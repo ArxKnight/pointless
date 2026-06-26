@@ -183,6 +183,11 @@ class QuarterCreateIn(BaseModel):
     preferred_max_recipients:int=3
 
 class QuarterParticipantsIn(BaseModel): participant_ids:list[int]
+class QuarterUpdateIn(BaseModel):
+    year:int|None=None
+    quarter:int|None=Field(default=None, ge=1, le=4)
+    label:str|None=None
+    participant_ids:list[int]|None=None
 class QuarterGenerateIn(BaseModel): seed:int|None=None
 class AllocationEditIn(BaseModel): from_participant_id:int; to_participant_id:int; amount:int
 

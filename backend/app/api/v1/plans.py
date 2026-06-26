@@ -1,13 +1,20 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import DepartmentMember, GivingPlan, PointsLedger, Quarter, User
-from app.schemas.api import PlanOut
 from app.services.auth_service import get_current_user, require_admin
 
 router=APIRouter(prefix="/plans", tags=["plans"])
 def user_member(db,user): return db.query(DepartmentMember).filter(DepartmentMember.email==user.email).first()
-def out(p): return {"id":p.id,"quarter_id":p.quarter_id,"from_member_id":p.from_member_id,"to_member_id":p.to_member_id,"from_name":p.from_member.display_name,"to_name":p.to_member.display_name,"amount":p.amount,"acknowledged":p.acknowledged}
+def out(p):
+    from_name = p.from_participant.display_name if p.from_participant else (p.from_member.display_name if p.from_member else "Unknown")
+    to_name = p.to_participant.display_name if p.to_participant else (p.to_member.display_name if p.to_member else "Unknown")
+    return {"id":p.id,"quarter_id":p.quarter_id,"from_member_id":p.from_member_id,"to_member_id":p.to_member_id,"from_participant_id":p.from_participant_id,"to_participant_id":p.to_participant_id,"from_name":from_name,"to_name":to_name,"amount":p.amount,"acknowledged":p.acknowledged}
+def current_calendar_quarter():
+    now=datetime.utcnow(); return now.year, ((now.month-1)//3)+1
+def is_history_quarter(q):
+    y,qn=current_calendar_quarter(); return q.status=="completed" or (q.year,q.quarter)<(y,qn)
 
 @router.get("/me")
 def my_plan(db:Session=Depends(get_db), user:User=Depends(get_current_user)):
@@ -23,18 +30,19 @@ def my_history(db:Session=Depends(get_db), user:User=Depends(get_current_user)):
     if not m: return []
     data=[]
     for q in db.query(Quarter).order_by(Quarter.year.desc(),Quarter.quarter.desc()).all():
+        if not is_history_quarter(q): continue
         rows=db.query(GivingPlan).filter(GivingPlan.quarter_id==q.id).filter((GivingPlan.from_member_id==m.id)|(GivingPlan.to_member_id==m.id)).all()
         data.append({"quarter":{"id":q.id,"label":q.label},"plans":[out(p) for p in rows]})
     return data
 
 @router.get("/history")
 def all_history(db:Session=Depends(get_db), user:User=Depends(get_current_user)):
-    """All giving for all quarters — used by the History tab."""
+    """All giving for passed/completed quarters — used by the History tab."""
     data=[]
     for q in db.query(Quarter).order_by(Quarter.year.desc(),Quarter.quarter.desc()).all():
+        if not is_history_quarter(q): continue
         rows=db.query(GivingPlan).filter(GivingPlan.quarter_id==q.id).all()
-        if rows:
-            data.append({"quarter":{"id":q.id,"label":q.label},"plans":[out(p) for p in rows]})
+        data.append({"quarter":{"id":q.id,"label":q.label},"plans":[out(p) for p in rows]})
     return data
 
 @router.get("/{quarter_id}")
@@ -49,5 +57,5 @@ def mark_sent(plan_id:int, db:Session=Depends(get_db), user:User=Depends(get_cur
     if not user.is_admin and (not m or p.from_member_id != m.id): raise HTTPException(403,"Can only mark your own sends")
     p.acknowledged=True
     if not db.query(PointsLedger).filter(PointsLedger.quarter_id==p.quarter_id,PointsLedger.from_member_id==p.from_member_id,PointsLedger.to_member_id==p.to_member_id,PointsLedger.amount==p.amount).first():
-        db.add(PointsLedger(quarter_id=p.quarter_id,from_member_id=p.from_member_id,to_member_id=p.to_member_id,amount=p.amount,marked_sent_by=user.id))
+        db.add(PointsLedger(quarter_id=p.quarter_id,from_member_id=p.from_member_id,to_member_id=p.to_member_id,from_participant_id=p.from_participant_id,to_participant_id=p.to_participant_id,amount=p.amount,marked_sent_by=user.id))
     db.commit(); return out(p)

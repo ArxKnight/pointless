@@ -14,7 +14,8 @@ from app.services.participant_generator import GenerationSettings, generate_dist
 from app.api.v1.participants import list_participants
 from app.api.v1.invitations import create_invitation, accept_invitation, list_invitations, revoke_invitation, public_invitation
 from app.api.v1.users import update_admin, delete_admin
-from app.schemas.api import AdminInvitationCreate, AdminInvitationAccept, UserAdminUpdate
+from app.api.v1.quarters import create_quarter, delete_quarter, list_quarters
+from app.schemas.api import AdminInvitationCreate, AdminInvitationAccept, UserAdminUpdate, QuarterCreateIn
 
 
 @pytest.fixture()
@@ -131,3 +132,25 @@ def test_last_active_super_admin_cannot_be_removed(db):
     other = admin_user(db, "other", super_admin=True)
     updated = update_admin(other.id, UserAdminUpdate(is_active=False), db, owner)
     assert updated["is_active"] is False
+
+
+def test_quarter_list_excludes_past_and_duplicate_create_requires_delete(db):
+    owner = admin_user(db)
+    past = Quarter(year=2025, quarter=1, label="Q1 2025", status="published", is_active=False, is_completed=False)
+    current = Quarter(year=2026, quarter=2, label="Q2 2026", status="draft", is_active=False, is_completed=False)
+    future = Quarter(year=2027, quarter=1, label="Q1 2027", status="draft", is_active=False, is_completed=False)
+    db.add_all([past, current, future]); db.commit()
+
+    labels = [q.label for q in list_quarters(False, db, owner)]
+    assert "Q1 2025" not in labels
+    assert "Q2 2026" in labels
+    assert "Q1 2027" in labels
+
+    with pytest.raises(HTTPException) as duplicate:
+        create_quarter(QuarterCreateIn(year=2027, quarter=1), db, owner)
+    assert duplicate.value.status_code == 409
+    assert "already made" in duplicate.value.detail
+
+    delete_quarter(future.id, db, owner)
+    replacement = create_quarter(QuarterCreateIn(year=2027, quarter=1), db, owner)
+    assert replacement.label == "Q1 2027"

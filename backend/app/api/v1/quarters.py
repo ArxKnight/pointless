@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import CompatibilityRule, GivingPlan, Participant, PointsLedger, Quarter, QuarterParticipant, User
-from app.schemas.api import AllocationEditIn, GenerateIn, QuarterCreateIn, QuarterOut, QuarterParticipantsIn, QuarterGenerateIn
+from app.schemas.api import AllocationEditIn, GenerateIn, QuarterCreateIn, QuarterOut, QuarterParticipantsIn, QuarterGenerateIn, QuarterUpdateIn
 from app.services.auth_service import get_current_user, require_admin
 from app.services.participant_generator import GenerationSettings, generate_distribution, validate_distribution, validate_feasibility
 from app.services.quarter_lookup import current_published_quarter
@@ -22,6 +22,29 @@ def next_quarter(db):
 def current_calendar_quarter() -> tuple[int, int]:
     now = datetime.utcnow()
     return now.year, ((now.month - 1) // 3) + 1
+
+
+def is_past_quarter(q: Quarter) -> bool:
+    year, quarter = current_calendar_quarter()
+    return (q.year, q.quarter) < (year, quarter)
+
+
+def assert_not_existing_quarter(db: Session, year: int, quarter: int, exclude_id: int | None = None) -> None:
+    existing = db.query(Quarter).filter(Quarter.year == year, Quarter.quarter == quarter)
+    if exclude_id is not None:
+        existing = existing.filter(Quarter.id != exclude_id)
+    if existing.first():
+        raise HTTPException(409, f"Q{quarter} {year} is already made. Delete the existing quarter first before making it again.")
+
+
+def replace_quarter_participants(db: Session, q: Quarter, ids: list[int]) -> None:
+    ids = sorted(set(ids))
+    participants = db.query(Participant).filter(Participant.id.in_(ids)).all() if ids else []
+    if len(participants) != len(ids):
+        raise HTTPException(404, "One or more participants were not found")
+    db.query(QuarterParticipant).filter_by(quarter_id=q.id).delete()
+    for pid in ids:
+        db.add(QuarterParticipant(quarter_id=q.id, participant_id=pid))
 
 
 def plan_row(p: GivingPlan):
@@ -60,14 +83,23 @@ def settings_for(q: Quarter, seed: int | None = None) -> GenerationSettings:
 
 
 @router.get("", response_model=list[QuarterOut])
-def list_quarters(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    return db.query(Quarter).order_by(Quarter.year.desc(), Quarter.quarter.desc()).all()
+def list_quarters(include_history: bool = False, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    query = db.query(Quarter)
+    if not include_history:
+        year, quarter = current_calendar_quarter()
+        query = query.filter((Quarter.year > year) | ((Quarter.year == year) & (Quarter.quarter >= quarter)))
+    return query.order_by(Quarter.year.desc(), Quarter.quarter.desc()).all()
+
+
+@router.get("/history", response_model=list[QuarterOut])
+def list_historical_quarters(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    year, quarter = current_calendar_quarter()
+    return db.query(Quarter).filter((Quarter.year < year) | ((Quarter.year == year) & (Quarter.quarter < quarter))).order_by(Quarter.year.desc(), Quarter.quarter.desc()).all()
 
 
 @router.post("", response_model=QuarterOut)
 def create_quarter(data: QuarterCreateIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    if db.query(Quarter).filter_by(year=data.year, quarter=data.quarter).first():
-        raise HTTPException(409, "Quarter already exists")
+    assert_not_existing_quarter(db, data.year, data.quarter)
     q = Quarter(
         year=data.year,
         quarter=data.quarter,
@@ -144,14 +176,41 @@ def set_quarter_participants(quarter_id: int, data: QuarterParticipantsIn, db: S
     q = db.get(Quarter, quarter_id)
     if not q: raise HTTPException(404, "Quarter not found")
     if q.status == "published": raise HTTPException(409, "Cannot change participants on a published quarter")
-    ids = sorted(set(data.participant_ids))
-    participants = db.query(Participant).filter(Participant.id.in_(ids)).all() if ids else []
-    if len(participants) != len(ids): raise HTTPException(404, "One or more participants were not found")
-    db.query(QuarterParticipant).filter_by(quarter_id=q.id).delete()
-    for pid in ids:
-        db.add(QuarterParticipant(quarter_id=q.id, participant_id=pid))
+    replace_quarter_participants(db, q, data.participant_ids)
     db.commit()
-    return {"ok": True, "participant_count": len(ids)}
+    return {"ok": True, "participant_count": len(set(data.participant_ids))}
+
+
+@router.patch("/{quarter_id}", response_model=QuarterOut)
+def update_quarter(quarter_id: int, data: QuarterUpdateIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    q = db.get(Quarter, quarter_id)
+    if not q: raise HTTPException(404, "Quarter not found")
+    if q.status == "published": raise HTTPException(409, "Cannot edit a published quarter. Delete it and generate a replacement if needed.")
+    new_year = data.year if data.year is not None else q.year
+    new_quarter = data.quarter if data.quarter is not None else q.quarter
+    if (new_year, new_quarter) != (q.year, q.quarter):
+        assert_not_existing_quarter(db, new_year, new_quarter, exclude_id=q.id)
+    q.year = new_year
+    q.quarter = new_quarter
+    q.label = data.label.strip() if data.label and data.label.strip() else f"Q{new_quarter} {new_year}"
+    if data.participant_ids is not None:
+        replace_quarter_participants(db, q, data.participant_ids)
+        db.query(GivingPlan).filter(GivingPlan.quarter_id == q.id).delete()
+        q.status = "draft"
+    db.commit(); db.refresh(q)
+    return q
+
+
+@router.delete("/{quarter_id}")
+def delete_quarter(quarter_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    q = db.get(Quarter, quarter_id)
+    if not q: raise HTTPException(404, "Quarter not found")
+    if db.query(PointsLedger).filter(PointsLedger.quarter_id == q.id).first():
+        raise HTTPException(409, "This quarter has sent-point history and cannot be deleted safely")
+    db.query(GivingPlan).filter(GivingPlan.quarter_id == q.id).delete()
+    db.query(QuarterParticipant).filter(QuarterParticipant.quarter_id == q.id).delete()
+    db.delete(q); db.commit()
+    return {"ok": True}
 
 
 @router.post("/{quarter_id}/validate")
