@@ -42,7 +42,9 @@ def ensure_installer_admin_not_demoted(db: Session, user: User, data: UserAdminU
     first_id = installer_admin_id(db)
     if first_id is None or user.id != first_id:
         return
-    if deleting or (data is not None and data.is_admin is False):
+    if deleting:
+        raise HTTPException(400, "The installer-created Admin cannot be deleted")
+    if data is not None and data.is_admin is False:
         raise HTTPException(400, "The installer-created Admin cannot be demoted from Admin")
 
 

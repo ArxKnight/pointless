@@ -134,6 +134,19 @@ def test_last_active_super_admin_cannot_be_removed(db):
     assert updated["is_active"] is False
 
 
+def test_installer_admin_cannot_be_deleted_even_when_another_super_admin_exists(db):
+    owner = admin_user(db)
+    other = admin_user(db, "other", super_admin=True)
+
+    with pytest.raises(HTTPException) as blocked:
+        delete_admin(owner.id, db, other)
+
+    assert blocked.value.status_code == 400
+    assert "cannot be deleted" in blocked.value.detail
+    db.refresh(owner)
+    assert owner.is_active is True
+
+
 def test_quarter_list_excludes_past_and_duplicate_create_requires_delete(db):
     owner = admin_user(db)
     past = Quarter(year=2025, quarter=1, label="Q1 2025", status="published", is_active=False, is_completed=False)
