@@ -110,8 +110,9 @@ def test_main_admin_invitation_single_use_and_revocable(db):
     token = created["token"]
     public = public_invitation(token, db)
     assert public["invitee_name"] == "Participant A"
-    accepted = accept_invitation(token, AdminInvitationAccept(display_name="Participant A", username="participant_a", email="user_a@example.com", password="password123", password_confirm="password123"), db)
+    accepted = accept_invitation(token, AdminInvitationAccept(username="participant_a", email="user_a@example.com", password="password123", password_confirm="password123"), db)
     assert accepted["user"]["username"] == "participant_a"
+    assert accepted["user"]["display_name"] == "participant_a"
     with pytest.raises(HTTPException) as reused:
         accept_invitation(token, AdminInvitationAccept(display_name="User A2", username="participant_a2", email="user_a2@example.com", password="password123", password_confirm="password123"), db)
     assert reused.value.status_code == 400

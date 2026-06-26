@@ -124,13 +124,16 @@ def accept_invitation(token: str, data: AdminInvitationAccept, db: Session = Dep
         raise HTTPException(400, "Password confirmation does not match")
     username = data.username.strip()
     email = str(data.email).lower()
+    if not username:
+        raise HTTPException(422, "Username is required")
     if db.query(User).filter(func.lower(User.username) == username.lower()).first():
         raise HTTPException(409, "Username already exists")
     if db.query(User).filter(func.lower(User.email) == email).first():
         raise HTTPException(409, "Email address already exists")
+    display_name = (data.display_name or username).strip()
     user = User(
         username=username,
-        display_name=data.display_name.strip(),
+        display_name=display_name or username,
         email=email,
         password_hash=hash_password(data.password),
         is_admin=True,

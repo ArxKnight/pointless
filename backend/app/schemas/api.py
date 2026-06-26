@@ -224,7 +224,7 @@ class AdminInvitationPublic(BaseModel):
     invitee_name:str; invitee_email:str|None=None; expires_at:datetime; status:str
 
 class AdminInvitationAccept(BaseModel):
-    display_name:str=Field(min_length=1)
+    display_name:str|None=None
     username:str=Field(min_length=1)
     email:EmailStr
     password:str=Field(min_length=8)
