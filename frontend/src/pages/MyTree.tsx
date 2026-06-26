@@ -24,45 +24,42 @@ export function MyTree(){
   if(data.status!=='ok')return <PublicShell><div className="card mx-auto max-w-xl p-8 text-center"><h1 className="text-3xl font-semibold">My Giving Tree</h1><h2 className="mt-3 text-xl">{data.participant.display_name}'s Giving Tree</h2><p className="mt-4 text-slate-300">{data.message||statusMessage(data.status)}</p><button onClick={load} className="mt-6 rounded bg-indigo-500 px-4 py-2 font-semibold">Retry</button></div></PublicShell>;
   const incoming=data.incoming_allocations||[];
   return <PublicShell>
-    <div className="mx-auto max-w-5xl space-y-6 text-center print:text-black">
-      <header>
+    <div className="mx-auto flex max-w-5xl flex-col items-center gap-8 text-center print:text-black">
+      <header className="w-full">
         <p className="text-sm uppercase tracking-[0.3em] text-indigo-300 print:text-slate-600">My Giving Tree</p>
         <h1 className="mt-2 text-4xl font-bold">{data.participant.display_name}'s Giving Tree</h1>
         <p className="mt-2 text-xl text-slate-300 print:text-slate-700">{data.quarter?.label}</p>
       </header>
-      <section className="card p-6 text-center print:border print:border-slate-300 print:bg-white">
-        <p className="text-lg"><strong>{data.participant.display_name}</strong> has 50 points to give:</p>
-        <div className="mt-6 overflow-x-auto rounded-2xl bg-black/20 p-6 print:bg-white">
-          <div className="mx-auto flex min-w-[520px] max-w-4xl flex-col items-center gap-6">
-            <div className="rounded-full bg-indigo-500 px-8 py-4 text-xl font-semibold text-white shadow-lg print:border print:border-slate-400 print:bg-white print:text-black">{data.participant.display_name}</div>
-            <div className="flex h-10 flex-col items-center"><span className="text-slate-400">↓</span><div className="h-8 w-px bg-slate-500" /></div>
-            <div className="grid w-full place-items-center gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {data.allocations.map(a=><div key={a.recipient_name} className="w-full rounded-xl border border-border bg-bg p-4 text-center print:border-slate-300 print:bg-white">
-                <div className="text-xs uppercase text-slate-400">gives to</div>
-                <div className="font-semibold">{a.recipient_name}</div>
-                <div className="mt-1 text-2xl font-mono text-indigo-300 print:text-black">{a.amount}</div>
-                <div className="text-xs text-slate-400 print:text-slate-600">points</div>
-              </div>)}
-            </div>
-          </div>
+      <section className="w-full rounded-3xl border-2 border-orange-400/70 bg-orange-500/15 p-6 text-center shadow-2xl shadow-orange-950/30 print:border-orange-500 print:bg-white">
+        <div className="mx-auto max-w-3xl rounded-2xl bg-orange-400/15 px-5 py-4 print:bg-orange-50">
+          <p className="text-sm font-bold uppercase tracking-[0.28em] text-orange-200 print:text-orange-700">Send your points</p>
+          <h2 className="mt-2 text-2xl font-bold text-orange-50 print:text-black">Who {data.participant.display_name} needs to send points to</h2>
+          <p className="mt-2 text-sm text-orange-100/90 print:text-slate-700">These are the people to give your 50 points to this quarter.</p>
         </div>
-        <h2 className="sr-only">Text list of point allocations</h2>
-        <ul className="mx-auto mt-6 max-w-3xl divide-y divide-border rounded-xl border border-border text-left print:border-slate-300">
-          {data.allocations.map(a=><li key={a.recipient_name} className="flex items-center justify-between p-4"><span>{a.recipient_name}</span><strong>{a.amount} points</strong></li>)}
-          <li className="flex items-center justify-between p-4 text-lg"><span>Total allocated</span><strong>{total} points</strong></li>
+        <div className="mx-auto mt-7 flex w-full max-w-4xl flex-wrap justify-center gap-4">
+          {data.allocations.map(a=><AllocationCard key={a.recipient_name} label="send to" name={a.recipient_name} amount={a.amount} tone="orange" />)}
+        </div>
+        <ul className="mx-auto mt-7 max-w-3xl divide-y divide-orange-300/25 rounded-2xl border border-orange-300/40 bg-black/20 text-left print:border-orange-300 print:bg-white">
+          {data.allocations.map(a=><li key={a.recipient_name} className="flex items-center justify-between gap-4 p-4"><span>{a.recipient_name}</span><strong className="text-orange-100 print:text-black">{a.amount} points</strong></li>)}
+          <li className="flex items-center justify-between gap-4 p-4 text-lg"><span>Total to send</span><strong className="text-orange-100 print:text-black">{total} points</strong></li>
         </ul>
       </section>
-      <section className="card p-6 text-center print:border print:border-slate-300 print:bg-white">
-        <p className="text-lg"><strong>{data.participant.display_name}</strong> will receive points from:</p>
-        <div className="mt-6 grid place-items-center gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {incoming.length===0?<p className="col-span-full text-slate-400">No incoming points are listed for this quarter yet.</p>:incoming.map(a=><div key={a.sender_name} className="w-full rounded-xl border border-border bg-bg p-4 text-center print:border-slate-300 print:bg-white"><div className="text-xs uppercase text-slate-400">receives from</div><div className="font-semibold">{a.sender_name}</div><div className="mt-1 text-2xl font-mono text-green-300 print:text-black">{a.amount}</div><div className="text-xs text-slate-400 print:text-slate-600">points</div></div>)}
+      <section className="w-full rounded-3xl border-2 border-green-400/70 bg-green-500/15 p-6 text-center shadow-2xl shadow-green-950/30 print:border-green-500 print:bg-white">
+        <div className="mx-auto max-w-3xl rounded-2xl bg-green-400/15 px-5 py-4 print:bg-green-50">
+          <p className="text-sm font-bold uppercase tracking-[0.28em] text-green-200 print:text-green-700">Receive points</p>
+          <h2 className="mt-2 text-2xl font-bold text-green-50 print:text-black">Who {data.participant.display_name} should expect points from</h2>
+          <p className="mt-2 text-sm text-green-100/90 print:text-slate-700">These are the people currently assigned to give points to you.</p>
         </div>
-        {incoming.length>0&&<ul className="mx-auto mt-6 max-w-3xl divide-y divide-border rounded-xl border border-border text-left print:border-slate-300">{incoming.map(a=><li key={a.sender_name} className="flex items-center justify-between p-4"><span>{a.sender_name}</span><strong>{a.amount} points</strong></li>)}<li className="flex items-center justify-between p-4 text-lg"><span>Total incoming</span><strong>{incomingTotal} points</strong></li></ul>}
+        <div className="mx-auto mt-7 flex w-full max-w-4xl flex-wrap justify-center gap-4">
+          {incoming.length===0?<p className="w-full text-green-100/80">No incoming points are listed for this quarter yet.</p>:incoming.map(a=><AllocationCard key={a.sender_name} label="receive from" name={a.sender_name} amount={a.amount} tone="green" />)}
+        </div>
+        {incoming.length>0&&<ul className="mx-auto mt-7 max-w-3xl divide-y divide-green-300/25 rounded-2xl border border-green-300/40 bg-black/20 text-left print:border-green-300 print:bg-white">{incoming.map(a=><li key={a.sender_name} className="flex items-center justify-between gap-4 p-4"><span>{a.sender_name}</span><strong className="text-green-100 print:text-black">{a.amount} points</strong></li>)}<li className="flex items-center justify-between gap-4 p-4 text-lg"><span>Total expected in</span><strong className="text-green-100 print:text-black">{incomingTotal} points</strong></li></ul>}
       </section>
     </div>
   </PublicShell>;
 }
 
+function AllocationCard({label,name,amount,tone}:{label:string;name:string;amount:number;tone:'orange'|'green'}){const colour=tone==='orange'?'border-orange-200/50 bg-orange-950/50 text-orange-100':'border-green-200/50 bg-green-950/50 text-green-100';const number=tone==='orange'?'text-orange-200':'text-green-200';return <div className={`w-full max-w-[220px] rounded-2xl border p-5 text-center shadow-lg ${colour} print:border-slate-300 print:bg-white print:text-black`}><div className="text-xs font-bold uppercase tracking-[0.22em] opacity-80">{label}</div><div className="mt-2 text-xl font-bold">{name}</div><div className={`mt-3 text-4xl font-black ${number} print:text-black`}>{amount}</div><div className="text-sm opacity-80">points</div></div>}
 function mapPublicError(message:string){
   if(/not found/i.test(message))return 'Giving Tree not found.';
   if(/not currently participating/i.test(message))return message;
