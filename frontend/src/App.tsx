@@ -43,7 +43,7 @@ export default function App(){
         {!user
           ? <Route path="*" element={<Login setUser={setUser}/>}/>
           : <Route element={<Layout user={user} setUser={setUser}/>}>
-              <Route index element={<Dashboard/>}/>
+              <Route index element={<Dashboard user={user}/>}/>
               <Route path="overview" element={<Overview/>}/>
               <Route path="history" element={<History/>}/>
               <Route path="settings" element={<Settings user={user}/>}/>

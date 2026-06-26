@@ -157,6 +157,7 @@ def test_public_tree_only_returns_published_quarter(db):
         QuarterParticipant(quarter_id=published.id, participant_id=alex.id),
         QuarterParticipant(quarter_id=published.id, participant_id=charlie.id),
         GivingPlan(quarter_id=published.id, from_participant_id=alex.id, to_participant_id=charlie.id, amount=50),
+        GivingPlan(quarter_id=published.id, from_participant_id=charlie.id, to_participant_id=alex.id, amount=50),
         GivingPlan(quarter_id=draft.id, from_participant_id=alex.id, to_participant_id=charlie.id, amount=25),
     ])
     db.commit()
@@ -167,6 +168,8 @@ def test_public_tree_only_returns_published_quarter(db):
     assert payload["participant"]["display_name"] == "Alex"
     assert payload["total_allocated"] == 50
     assert payload["allocations"] == [{"recipient_name": "Charlie", "amount": 50}]
+    assert payload["incoming_allocations"] == [{"sender_name": "Charlie", "amount": 50}]
+    assert payload["total_incoming"] == 50
     assert "id" not in payload["participant"]
 
 

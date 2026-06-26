@@ -148,22 +148,35 @@ def overview_tree_payload(db: Session, q: Quarter | None):
     }
 
 
-@router.get("/active/overview-tree")
-def active_overview_tree(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    q = current_published_quarter(db)
+def participant_overview_tree_payload(db: Session, q: Quarter | None):
     participants = quarter_participants(db, q.id) if q else []
     plans = db.query(GivingPlan).filter(GivingPlan.quarter_id == q.id).all() if q else []
-    sent = {p.id: 0 for p in participants}; received = {p.id: 0 for p in participants}
+    sent = {p.id: 0 for p in participants}; received = {p.id: 0 for p in participants}; recipients = {p.id: set() for p in participants}; sources = {p.id: set() for p in participants}
     for row in plans:
+        if row.from_participant_id is None or row.to_participant_id is None: continue
         sent[row.from_participant_id] = sent.get(row.from_participant_id, 0) + row.amount
         received[row.to_participant_id] = received.get(row.to_participant_id, 0) + row.amount
+        recipients.setdefault(row.from_participant_id, set()).add(row.to_participant_id)
+        sources.setdefault(row.to_participant_id, set()).add(row.from_participant_id)
     return {
         "quarter": QuarterOut.model_validate(q) if q else None,
         "team_groups": [],
         "teams": [],
-        "users": [{"member_id": p.id, "user_id": None, "display_name": p.display_name, "email": "", "team_id": None, "team_name": None, "team_colour": None, "team_group_id": None, "team_group_name": None, "total_points_sent": sent.get(p.id, 0), "total_points_received": received.get(p.id, 0), "recipient_count": 0, "incoming_allocation_count": 0} for p in participants],
-        "allocations": [{"allocation_id": r.id, "quarter_id": r.quarter_id, "quarter": q.label if q else "", "source_member_id": r.from_participant_id, "recipient_member_id": r.to_participant_id, "source_user_id": None, "recipient_user_id": None, "source_name": r.from_participant.display_name, "recipient_name": r.to_participant.display_name, "points": r.amount, "acknowledged": r.acknowledged, "allocation_date": q.published_at if q else None} for r in plans],
+        "users": [{"member_id": p.id, "user_id": None, "display_name": p.display_name, "email": "", "team_id": None, "team_name": None, "team_colour": None, "team_group_id": None, "team_group_name": None, "total_points_sent": sent.get(p.id, 0), "total_points_received": received.get(p.id, 0), "recipient_count": len(recipients.get(p.id, set())), "incoming_allocation_count": len(sources.get(p.id, set()))} for p in participants],
+        "allocations": [{"allocation_id": r.id, "quarter_id": r.quarter_id, "quarter": q.label if q else "", "source_member_id": r.from_participant_id, "recipient_member_id": r.to_participant_id, "source_user_id": None, "recipient_user_id": None, "source_name": r.from_participant.display_name if r.from_participant else "Unknown", "recipient_name": r.to_participant.display_name if r.to_participant else "Unknown", "points": r.amount, "acknowledged": r.acknowledged, "allocation_date": q.published_at or q.generated_at if q else None} for r in plans],
     }
+
+
+@router.get("/active/overview-tree")
+def active_overview_tree(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return participant_overview_tree_payload(db, current_published_quarter(db))
+
+
+@router.get("/{quarter_id}/overview-tree")
+def quarter_overview_tree(quarter_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    q = db.get(Quarter, quarter_id)
+    if not q: raise HTTPException(404, "Quarter not found")
+    return participant_overview_tree_payload(db, q)
 
 
 @router.put("/{quarter_id}/participants")

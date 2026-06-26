@@ -55,8 +55,10 @@ def public_tree_payload(db: Session, slug: str) -> dict:
         else:
             message = f"{participant.display_name} is not currently participating in any quarterly tree."
         return {"status": "not_included", "message": message, "participant": {"display_name": participant.display_name, "slug": participant.slug}, "quarter": quarter_public(quarter), "next_quarter": quarter_public(next_quarter), "allocations": [], "total_allocated": 0}
-    rows = db.query(GivingPlan).filter(GivingPlan.quarter_id == quarter.id, GivingPlan.from_participant_id == participant.id).all()
-    allocations = [{"recipient_name": r.to_participant.display_name if r.to_participant else "Unknown", "amount": r.amount} for r in rows]
+    outgoing_rows = db.query(GivingPlan).filter(GivingPlan.quarter_id == quarter.id, GivingPlan.from_participant_id == participant.id).all()
+    incoming_rows = db.query(GivingPlan).filter(GivingPlan.quarter_id == quarter.id, GivingPlan.to_participant_id == participant.id).all()
+    allocations = [{"recipient_name": r.to_participant.display_name if r.to_participant else "Unknown", "amount": r.amount} for r in outgoing_rows]
+    incoming_allocations = [{"sender_name": r.from_participant.display_name if r.from_participant else "Unknown", "amount": r.amount} for r in incoming_rows]
     return {
         "status": "ok",
         "redirected_from": redirected_from,
@@ -64,7 +66,9 @@ def public_tree_payload(db: Session, slug: str) -> dict:
         "quarter": {"label": quarter.label, "year": quarter.year, "quarter": quarter.quarter},
         "total_points": 50,
         "allocations": allocations,
+        "incoming_allocations": incoming_allocations,
         "total_allocated": sum(r["amount"] for r in allocations),
+        "total_incoming": sum(r["amount"] for r in incoming_allocations),
     }
 
 

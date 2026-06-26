@@ -17,25 +17,27 @@ export function MyTree(){
     return()=>{document.head.removeChild(meta)};
   },[load]);
   const total=useMemo(()=>data?.allocations.reduce((sum,a)=>sum+a.amount,0)??0,[data]);
+  const incomingTotal=useMemo(()=>data?.incoming_allocations?.reduce((sum,a)=>sum+a.amount,0)??0,[data]);
   if(loading)return <PublicShell><p>Loading giving tree...</p></PublicShell>;
   if(error)return <PublicShell><div className="card mx-auto max-w-xl p-8 text-center"><h1 className="text-3xl font-semibold">My Giving Tree</h1><p className="mt-4 text-slate-300">{error}</p><button onClick={load} className="mt-6 rounded bg-indigo-500 px-4 py-2 font-semibold">Retry</button></div></PublicShell>;
   if(!data)return <PublicShell><p>The Giving Tree could not be loaded. Please try again.</p></PublicShell>;
   if(data.status!=='ok')return <PublicShell><div className="card mx-auto max-w-xl p-8 text-center"><h1 className="text-3xl font-semibold">My Giving Tree</h1><h2 className="mt-3 text-xl">{data.participant.display_name}'s Giving Tree</h2><p className="mt-4 text-slate-300">{data.message||statusMessage(data.status)}</p><button onClick={load} className="mt-6 rounded bg-indigo-500 px-4 py-2 font-semibold">Retry</button></div></PublicShell>;
+  const incoming=data.incoming_allocations||[];
   return <PublicShell>
-    <div className="mx-auto max-w-4xl space-y-6 print:text-black">
-      <header className="text-center">
+    <div className="mx-auto max-w-5xl space-y-6 text-center print:text-black">
+      <header>
         <p className="text-sm uppercase tracking-[0.3em] text-indigo-300 print:text-slate-600">My Giving Tree</p>
         <h1 className="mt-2 text-4xl font-bold">{data.participant.display_name}'s Giving Tree</h1>
         <p className="mt-2 text-xl text-slate-300 print:text-slate-700">{data.quarter?.label}</p>
       </header>
-      <section className="card p-6 print:border print:border-slate-300 print:bg-white">
+      <section className="card p-6 text-center print:border print:border-slate-300 print:bg-white">
         <p className="text-lg"><strong>{data.participant.display_name}</strong> has 50 points to give:</p>
         <div className="mt-6 overflow-x-auto rounded-2xl bg-black/20 p-6 print:bg-white">
-          <div className="flex min-w-[520px] flex-col items-center gap-6">
+          <div className="mx-auto flex min-w-[520px] max-w-4xl flex-col items-center gap-6">
             <div className="rounded-full bg-indigo-500 px-8 py-4 text-xl font-semibold text-white shadow-lg print:border print:border-slate-400 print:bg-white print:text-black">{data.participant.display_name}</div>
             <div className="flex h-10 flex-col items-center"><span className="text-slate-400">↓</span><div className="h-8 w-px bg-slate-500" /></div>
-            <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {data.allocations.map(a=><div key={a.recipient_name} className="rounded-xl border border-border bg-bg p-4 text-center print:border-slate-300 print:bg-white">
+            <div className="grid w-full place-items-center gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {data.allocations.map(a=><div key={a.recipient_name} className="w-full rounded-xl border border-border bg-bg p-4 text-center print:border-slate-300 print:bg-white">
                 <div className="text-xs uppercase text-slate-400">gives to</div>
                 <div className="font-semibold">{a.recipient_name}</div>
                 <div className="mt-1 text-2xl font-mono text-indigo-300 print:text-black">{a.amount}</div>
@@ -45,10 +47,17 @@ export function MyTree(){
           </div>
         </div>
         <h2 className="sr-only">Text list of point allocations</h2>
-        <ul className="mt-6 divide-y divide-border rounded-xl border border-border print:border-slate-300">
+        <ul className="mx-auto mt-6 max-w-3xl divide-y divide-border rounded-xl border border-border text-left print:border-slate-300">
           {data.allocations.map(a=><li key={a.recipient_name} className="flex items-center justify-between p-4"><span>{a.recipient_name}</span><strong>{a.amount} points</strong></li>)}
           <li className="flex items-center justify-between p-4 text-lg"><span>Total allocated</span><strong>{total} points</strong></li>
         </ul>
+      </section>
+      <section className="card p-6 text-center print:border print:border-slate-300 print:bg-white">
+        <p className="text-lg"><strong>{data.participant.display_name}</strong> will receive points from:</p>
+        <div className="mt-6 grid place-items-center gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {incoming.length===0?<p className="col-span-full text-slate-400">No incoming points are listed for this quarter yet.</p>:incoming.map(a=><div key={a.sender_name} className="w-full rounded-xl border border-border bg-bg p-4 text-center print:border-slate-300 print:bg-white"><div className="text-xs uppercase text-slate-400">receives from</div><div className="font-semibold">{a.sender_name}</div><div className="mt-1 text-2xl font-mono text-green-300 print:text-black">{a.amount}</div><div className="text-xs text-slate-400 print:text-slate-600">points</div></div>)}
+        </div>
+        {incoming.length>0&&<ul className="mx-auto mt-6 max-w-3xl divide-y divide-border rounded-xl border border-border text-left print:border-slate-300">{incoming.map(a=><li key={a.sender_name} className="flex items-center justify-between p-4"><span>{a.sender_name}</span><strong>{a.amount} points</strong></li>)}<li className="flex items-center justify-between p-4 text-lg"><span>Total incoming</span><strong>{incomingTotal} points</strong></li></ul>}
       </section>
     </div>
   </PublicShell>;

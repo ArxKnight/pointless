@@ -22,7 +22,7 @@ Prebuilt single-container app image on Docker Hub:
 
 ```text
 arxknight/quarterly-points-app:latest
-arxknight/quarterly-points-app:0.3.7
+arxknight/quarterly-points-app:0.3.8
 ```
 
 The app container includes Nginx serving the React frontend and FastAPI behind `/api`. MySQL remains a separate persistent database.
