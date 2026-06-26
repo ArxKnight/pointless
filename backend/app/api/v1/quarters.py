@@ -1,15 +1,24 @@
 from datetime import datetime
+import logging
+import sys
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import CompatibilityRule, GivingPlan, Participant, PointsLedger, Quarter, QuarterParticipant, User
-from app.schemas.api import AllocationEditIn, GenerateIn, QuarterCreateIn, QuarterOut, QuarterParticipantsIn, QuarterGenerateIn, QuarterUpdateIn
+from app.schemas.api import AllocationEditIn, GenerateIn, QuarterCreateIn, QuarterGenerateActivateIn, QuarterOut, QuarterParticipantsIn, QuarterGenerateIn, QuarterUpdateIn
 from app.services.auth_service import get_current_user, require_admin
 from app.services.participant_generator import GenerationSettings, generate_distribution, validate_distribution, validate_feasibility
 from app.services.quarter_lookup import current_published_quarter, current_calendar_quarter
 
 router = APIRouter(prefix="/quarters", tags=["quarters"])
+logger = logging.getLogger("app.quarters")
+
+
+def qlog(level: str, message: str, *args) -> None:
+    getattr(logger, level)(message, *args)
+    rendered = message % args if args else message
+    print(f"[pointless] {rendered}", file=sys.stderr, flush=True)
 
 
 def next_quarter(db):
@@ -99,7 +108,7 @@ def create_quarter(data: QuarterCreateIn, db: Session = Depends(get_db), admin: 
         year=data.year,
         quarter=data.quarter,
         label=data.label or f"Q{data.quarter} {data.year}",
-        status="draft",
+        status="created",
         is_active=False,
         is_completed=False,
         allocation_min=10,
@@ -204,7 +213,7 @@ def update_quarter(quarter_id: int, data: QuarterUpdateIn, db: Session = Depends
     if data.participant_ids is not None:
         replace_quarter_participants(db, q, data.participant_ids)
         db.query(GivingPlan).filter(GivingPlan.quarter_id == q.id).delete()
-        q.status = "draft"
+        q.status = "created"
     db.commit(); db.refresh(q)
     return q
 
@@ -229,22 +238,69 @@ def validate_quarter(quarter_id: int, db: Session = Depends(get_db), admin: User
     return {"valid": result.valid, "errors": result.errors, "warnings": result.warnings}
 
 
+def _generate_plan_rows(db: Session, q: Quarter, seed: int | None, admin: User) -> dict:
+    qlog("info", "Quarter generation started: quarter_id=%s label=%s year=%s quarter=%s admin_id=%s seed=%s", q.id, q.label, q.year, q.quarter, admin.id, seed)
+    participants = quarter_participants(db, q.id)
+    active_count = sum(1 for p in participants if p.is_active)
+    qlog("info", "Quarter generation loaded participants: quarter_id=%s selected=%s active=%s", q.id, len(participants), active_count)
+    rules = db.query(CompatibilityRule).all()
+    qlog("info", "Quarter generation loaded compatibility rules: quarter_id=%s rules=%s", q.id, len(rules))
+    feasibility = validate_feasibility(participants, rules, settings_for(q, seed))
+    if not feasibility.valid:
+        qlog("error", "Quarter generation feasibility failed: quarter_id=%s errors=%s warnings=%s", q.id, feasibility.errors, feasibility.warnings)
+        raise ValueError("Unable to generate a valid distribution. " + " ".join(feasibility.errors))
+    if feasibility.warnings:
+        qlog("warning", "Quarter generation feasibility warnings: quarter_id=%s warnings=%s", q.id, feasibility.warnings)
+    history_rows = [plan_row(r) for r in db.query(GivingPlan).filter(GivingPlan.quarter_id != q.id).order_by(GivingPlan.id.desc()).limit(200).all()]
+    qlog("info", "Quarter generation loaded history: quarter_id=%s history_rows=%s", q.id, len(history_rows))
+    qlog("info", "Quarter generation solver starting: quarter_id=%s", q.id)
+    rows = generate_distribution(participants, rules, settings_for(q, seed), history=history_rows)
+    qlog("info", "Quarter generation solver finished: quarter_id=%s allocation_rows=%s", q.id, len(rows))
+    deleted = db.query(GivingPlan).filter(GivingPlan.quarter_id == q.id).delete()
+    qlog("info", "Quarter generation cleared old allocation rows: quarter_id=%s deleted_rows=%s", q.id, deleted)
+    for row in rows:
+        db.add(GivingPlan(quarter_id=q.id, **row))
+    q.generated_at = datetime.utcnow()
+    return {"valid": True, "errors": [], "warnings": feasibility.warnings}
+
+
+@router.post("/generate-activate")
+def generate_activate_quarter(data: QuarterGenerateActivateIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    assert_not_existing_quarter(db, data.year, data.quarter)
+    q = Quarter(year=data.year, quarter=data.quarter, label=data.label or f"Q{data.quarter} {data.year}", status="generating", is_active=False, is_completed=False, allocation_min=10, allocation_max=50, preferred_min_recipients=data.preferred_min_recipients, preferred_max_recipients=data.preferred_max_recipients)
+    db.add(q); db.flush()
+    try:
+        replace_quarter_participants(db, q, data.participant_ids)
+        validation = _generate_plan_rows(db, q, data.seed, admin)
+        _publish_quarter(db, q, admin)
+        db.commit(); db.refresh(q)
+        qlog("info", "Quarter generate-activate complete: quarter_id=%s label=%s status=%s active=%s", q.id, q.label, q.status, q.is_active)
+        return {"quarter": QuarterOut.model_validate(q), "plans": plan_rows(db, q.id), "validation": validation}
+    except HTTPException:
+        db.rollback(); logger.exception("Quarter generate-activate failed: year=%s quarter=%s label=%s", data.year, data.quarter, data.label); raise
+    except ValueError as exc:
+        db.rollback(); logger.exception("Quarter generate-activate failed validation: year=%s quarter=%s label=%s", data.year, data.quarter, data.label); raise HTTPException(400, str(exc))
+    except Exception:
+        db.rollback(); logger.exception("Quarter generate-activate crashed: year=%s quarter=%s label=%s", data.year, data.quarter, data.label); raise
+
+
 @router.post("/{quarter_id}/generate")
 def generate_quarter(quarter_id: int, data: QuarterGenerateIn = QuarterGenerateIn(), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     q = db.get(Quarter, quarter_id)
     if not q: raise HTTPException(404, "Quarter not found")
-    if q.status == "published": raise HTTPException(409, "Cannot regenerate a published quarter")
-    participants = quarter_participants(db, q.id)
+    if q.status == "published": raise HTTPException(409, "Cannot regenerate a published quarter. Delete it and generate a replacement if needed.")
     try:
-        rows = generate_distribution(participants, db.query(CompatibilityRule).all(), settings_for(q, data.seed), history=[plan_row(r) for r in db.query(GivingPlan).filter(GivingPlan.quarter_id != q.id).order_by(GivingPlan.id.desc()).limit(200).all()])
+        validation = _generate_plan_rows(db, q, data.seed, admin)
+        _publish_quarter(db, q, admin)
+        db.commit(); db.refresh(q)
+        qlog("info", "Quarter generation complete: quarter_id=%s label=%s status=%s active=%s", q.id, q.label, q.status, q.is_active)
+        return {"quarter": QuarterOut.model_validate(q), "plans": plan_rows(db, q.id), "validation": validation}
+    except HTTPException:
+        db.rollback(); raise
     except ValueError as exc:
-        raise HTTPException(400, str(exc))
-    db.query(GivingPlan).filter(GivingPlan.quarter_id == q.id).delete()
-    for row in rows:
-        db.add(GivingPlan(quarter_id=q.id, **row))
-    q.status = "draft"; q.generated_at = datetime.utcnow()
-    db.commit()
-    return {"quarter": QuarterOut.model_validate(q), "plans": plan_rows(db, q.id), "validation": {"valid": True, "errors": [], "warnings": []}}
+        db.rollback(); logger.exception("Quarter generation failed validation: quarter_id=%s label=%s", q.id, q.label); raise HTTPException(400, str(exc))
+    except Exception:
+        db.rollback(); logger.exception("Quarter generation crashed: quarter_id=%s label=%s", q.id, q.label); raise
 
 
 @router.post("/{quarter_id}/regenerate")
@@ -269,8 +325,8 @@ def edit_allocation(quarter_id: int, allocation_id: int, data: AllocationEditIn,
     return plan_row(row)
 
 
-@router.post("/{quarter_id}/validate-draft")
-def validate_draft(quarter_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+@router.post("/{quarter_id}/validate-generated")
+def validate_generated(quarter_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     q = db.get(Quarter, quarter_id)
     if not q: raise HTTPException(404, "Quarter not found")
     try:
@@ -282,6 +338,7 @@ def validate_draft(quarter_id: int, db: Session = Depends(get_db), admin: User =
 
 def _publish_quarter(db: Session, q: Quarter, admin: User) -> None:
     year, quarter = current_calendar_quarter()
+    qlog("info", "Quarter activation started: quarter_id=%s label=%s calendar_year=%s calendar_quarter=%s", q.id, q.label, year, quarter)
     q.status = "published"
     q.is_completed = False
     q.published_at = datetime.utcnow()
@@ -289,13 +346,14 @@ def _publish_quarter(db: Session, q: Quarter, admin: User) -> None:
     for published in db.query(Quarter).filter(Quarter.status == "published", Quarter.is_completed == False).all():  # noqa: E712
         published.is_active = published.year == year and published.quarter == quarter
     q.is_active = q.year == year and q.quarter == quarter
+    qlog("info", "Quarter activation finished: quarter_id=%s label=%s active=%s", q.id, q.label, q.is_active)
 
 
 @router.post("/{quarter_id}/publish")
 def publish_quarter(quarter_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     q = db.get(Quarter, quarter_id)
     if not q: raise HTTPException(404, "Quarter not found")
-    validation = validate_draft(quarter_id, db, admin)
+    validation = validate_generated(quarter_id, db, admin)
     if not validation["valid"]: raise HTTPException(400, validation["errors"][0])
     _publish_quarter(db, q, admin)
     db.commit(); db.refresh(q)
@@ -304,14 +362,7 @@ def publish_quarter(quarter_id: int, db: Session = Depends(get_db), admin: User 
 
 @router.post("/{quarter_id}/generate-publish")
 def generate_publish_quarter(quarter_id: int, data: QuarterGenerateIn = QuarterGenerateIn(), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    generated = generate_quarter(quarter_id, data, db, admin)
-    q = db.get(Quarter, quarter_id)
-    if not q: raise HTTPException(404, "Quarter not found")
-    validation = validate_draft(quarter_id, db, admin)
-    if not validation["valid"]: raise HTTPException(400, validation["errors"][0])
-    _publish_quarter(db, q, admin)
-    db.commit(); db.refresh(q)
-    return {"quarter": QuarterOut.model_validate(q), "plans": plan_rows(db, q.id), "validation": generated.get("validation", {"valid": True, "errors": [], "warnings": []})}
+    return generate_quarter(quarter_id, data, db, admin)
 
 
 @router.post("/regenerate")
@@ -319,7 +370,7 @@ def legacy_regenerate(force: bool = False, db: Session = Depends(get_db), admin:
     y, qn = current_calendar_quarter()
     q = db.query(Quarter).filter_by(year=y, quarter=qn).first()
     if not q:
-        q = Quarter(year=y, quarter=qn, label=f"Q{qn} {y}", status="draft", is_active=False, is_completed=False, allocation_min=10, allocation_max=50, preferred_max_recipients=3)
+        q = Quarter(year=y, quarter=qn, label=f"Q{qn} {y}", status="created", is_active=False, is_completed=False, allocation_min=10, allocation_max=50, preferred_max_recipients=3)
         db.add(q); db.flush()
         active = db.query(Participant).filter(Participant.is_active == True).all()  # noqa: E712
         for p in active:
@@ -333,7 +384,7 @@ def generate(data: GenerateIn, db: Session = Depends(get_db), admin: User = Depe
     y, qn = (data.year, data.quarter) if data.year and data.quarter else next_quarter(db)
     existing = db.query(Quarter).filter(Quarter.year == y, Quarter.quarter == qn).first()
     if not existing:
-        existing = Quarter(year=y, quarter=qn, label=f"Q{qn} {y}", status="draft", is_active=False, is_completed=False, allocation_min=10, allocation_max=50, preferred_max_recipients=3)
+        existing = Quarter(year=y, quarter=qn, label=f"Q{qn} {y}", status="created", is_active=False, is_completed=False, allocation_min=10, allocation_max=50, preferred_max_recipients=3)
         db.add(existing); db.flush()
         for p in db.query(Participant).filter(Participant.is_active == True).all():  # noqa: E712
             db.add(QuarterParticipant(quarter_id=existing.id, participant_id=p.id))

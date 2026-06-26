@@ -24,7 +24,7 @@ class MemberOut(BaseModel):
     id:int; display_name:str; email:str; active:bool; created_at:datetime
     class Config: from_attributes=True
 class QuarterOut(BaseModel):
-    id:int; year:int; quarter:int; label:str; generated_at:datetime; is_active:bool; is_completed:bool; status:str="draft"; published_at:datetime|None=None; published_by_admin_id:int|None=None
+    id:int; year:int; quarter:int; label:str; generated_at:datetime; is_active:bool; is_completed:bool; status:str="published"; published_at:datetime|None=None; published_by_admin_id:int|None=None
     class Config: from_attributes=True
 class PlanOut(BaseModel):
     id:int; quarter_id:int; from_member_id:int|None=None; to_member_id:int|None=None; from_participant_id:int|None=None; to_participant_id:int|None=None; from_name:str; to_name:str; amount:int; acknowledged:bool=False
@@ -189,6 +189,9 @@ class QuarterUpdateIn(BaseModel):
     label:str|None=None
     participant_ids:list[int]|None=None
 class QuarterGenerateIn(BaseModel): seed:int|None=None
+class QuarterGenerateActivateIn(QuarterCreateIn):
+    participant_ids:list[int]
+    seed:int|None=None
 class AllocationEditIn(BaseModel): from_participant_id:int; to_participant_id:int; amount:int
 
 class AdminInvitationCreate(BaseModel):

@@ -6,7 +6,7 @@ from app.models import DepartmentMember, GivingPlan, Quarter
 from app.services.member_sync import sync_active_users_to_members
 from app.services.plan_generator import generate_balanced_plan
 
-logger = logging.getLogger("quarterly_points.quarter_service")
+logger = logging.getLogger("pointless.quarter_service")
 
 
 def _current_quarter() -> tuple[int, int]:

@@ -1,6 +1,6 @@
-# Quarterly Points Distribution Web App
+# Pointless
 
-Self-hosted FastAPI + React app in one Docker container, with MySQL as the persistent database.
+Because patterns raise questions. Self-hosted FastAPI + React app in one Docker container, with MySQL as the persistent database.
 
 ## Core purpose
 
@@ -9,10 +9,8 @@ An administrator manages quarterly points distributions:
 1. Add distribution participants by typing or pasting names.
 2. Configure who can reasonably give points to whom.
 3. Select participants for a quarter.
-4. Generate a balanced draft distribution.
-5. Review/validate it.
-6. Publish it.
-7. Participants open their public Giving Tree page at `/tree/{slug}`.
+4. Generate and activate a balanced distribution.
+5. Participants open their public Giving Tree page at `/tree/{slug}`.
 
 Only administrators need login accounts. Participants do **not** need usernames, passwords, emails, roles, or app accounts.
 
@@ -21,8 +19,8 @@ Only administrators need login accounts. Participants do **not** need usernames,
 Prebuilt single-container app image on Docker Hub:
 
 ```text
-arxknight/quarterly-points-app:latest
-arxknight/quarterly-points-app:0.3.11
+arxknight/pointless:latest
+arxknight/pointless:0.4.0
 ```
 
 The app container includes Nginx serving the React frontend and FastAPI behind `/api`. MySQL remains a separate persistent database.
@@ -132,23 +130,20 @@ Administrators can use **Settings → Compatibility** to click matrix cells or b
 
 Quarters now have statuses:
 
-- `draft`
+- `created`
+- `generating`
 - `published`
 - `completed`
 
-Public Giving Tree pages only show the latest published quarter.
+Public Giving Tree pages show the published quarter for the current calendar period.
 
 Workflow:
 
-1. Open **Quarters**.
-2. Create a draft quarter.
-3. Select participants included in that quarter.
-4. Validate compatibility.
-5. Generate a draft distribution.
-6. Review totals and allocations.
-7. Publish when ready.
-
-Regenerating a draft does not change public pages. Publishing explicitly updates the current public distribution.
+1. Open **Manage Quarters**.
+2. Choose the quarter and selected participants.
+3. Generate the quarter.
+4. The app validates, generates, and activates/publishes the quarter in one flow.
+5. Open the generated quarter to review allocations, or delete it before ledger history exists if it needs replacing.
 
 ## Allocation algorithm
 
@@ -227,14 +222,10 @@ POST   /api/compatibility/groups
 POST   /api/compatibility/groups/{id}/allow-all
 
 GET    /api/quarters
-POST   /api/quarters
-PUT    /api/quarters/{id}/participants
-POST   /api/quarters/{id}/validate
-POST   /api/quarters/{id}/generate
+POST   /api/quarters/generate-activate
 POST   /api/quarters/{id}/regenerate
-PATCH  /api/quarters/{id}/allocations/{allocation_id}
-POST   /api/quarters/{id}/validate-draft
-POST   /api/quarters/{id}/publish
+GET    /api/quarters/{id}
+DELETE /api/quarters/{id}
 GET    /api/quarters/{id}
 ```
 
@@ -252,7 +243,7 @@ Alembic migration:
 backend/alembic/versions/0003_participants.py
 ```
 
-It adds participants, compatibility rules/groups, quarter participants, draft/published status fields, and participant allocation columns.
+It adds participants, compatibility rules/groups, quarter participants, created/generating/published status fields, and participant allocation columns.
 
 Existing installs are also upgraded safely at startup with `ensure_participant_schema()` for deployments that rely on `Base.metadata.create_all()` instead of manually running Alembic.
 
@@ -277,6 +268,6 @@ npm run build
 If using Docker locally:
 
 ```bash
-docker build -t arxknight/quarterly-points-app:latest .
-docker push arxknight/quarterly-points-app:latest
+docker build -t arxknight/pointless:latest .
+docker push arxknight/pointless:latest
 ```

@@ -15,7 +15,7 @@ services:
       retries: 20
 
   app:
-    image: arxknight/quarterly-points-app:latest
+    image: arxknight/pointless:latest
     build: .
     environment:
       SECRET_KEY: ${SECRET_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}

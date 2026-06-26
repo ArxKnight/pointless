@@ -20,6 +20,8 @@ from app.services.participant_generator import (
     validate_feasibility,
 )
 from app.api.v1.public import public_tree_payload
+from app.api.v1.quarters import generate_activate_quarter
+from app.schemas.api import QuarterGenerateActivateIn
 
 
 @pytest.fixture()
@@ -107,6 +109,25 @@ def test_feasibility_reports_participant_with_no_recipients(db):
     result = validate_feasibility([alex, billy], db.query(CompatibilityRule).all(), default_allowed=False)
     assert result.valid is False
     assert any("Alex has no eligible recipients" in error for error in result.errors)
+
+
+def test_generate_activate_quarter_creates_published_plan_without_draft_state(db):
+    admin = User(username="admin", display_name="Admin", email="admin@example.com", password_hash=hash_password("password"), is_admin=True, is_super_admin=True, is_active=True)
+    db.add(admin)
+    participants = add_participants(db, ["Adam", "Alex", "Charlie", "John", "Marijus", "Uzzy"])
+    for a in participants:
+        for b in participants:
+            if a.id != b.id:
+                db.add(CompatibilityRule(from_participant_id=a.id, to_participant_id=b.id, is_allowed=True))
+    db.commit()
+
+    result = generate_activate_quarter(QuarterGenerateActivateIn(year=2026, quarter=4, label="Q4 2026", participant_ids=[p.id for p in participants], seed=7), db, admin)
+    q = db.query(Quarter).filter_by(year=2026, quarter=4).one()
+
+    assert q.status == "published"
+    assert q.status != "draft"
+    assert len(result["plans"]) > 0
+    assert db.query(GivingPlan).filter_by(quarter_id=q.id).count() == len(result["plans"])
 
 
 def test_generator_creates_compatible_exact_50_uneven_whole_number_plan(db):

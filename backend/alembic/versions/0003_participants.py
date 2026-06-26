@@ -56,7 +56,7 @@ def upgrade():
     op.create_index('ix_quarter_participants_participant_id', 'quarter_participants', ['participant_id'])
 
     for name, ddl in {
-        'status': sa.Column('status', sa.String(20), nullable=False, server_default='draft'),
+        'status': sa.Column('status', sa.String(20), nullable=False, server_default='published'),
         'created_at': sa.Column('created_at', sa.DateTime(), nullable=True),
         'published_at': sa.Column('published_at', sa.DateTime(), nullable=True),
         'allocation_min': sa.Column('allocation_min', sa.Integer(), nullable=False, server_default='5'),
@@ -66,7 +66,7 @@ def upgrade():
     }.items():
         if not _has_column(bind, 'quarters', name):
             op.add_column('quarters', ddl)
-    op.execute("UPDATE quarters SET status = CASE WHEN is_completed = 1 THEN 'completed' WHEN is_active = 1 THEN 'published' ELSE 'draft' END WHERE status IS NULL OR status = 'draft'")
+    op.execute("UPDATE quarters SET status = CASE WHEN is_completed = 1 THEN 'completed' ELSE 'published' END WHERE status IS NULL OR status = 'draft'")
     op.create_index('ix_quarters_status', 'quarters', ['status'])
 
     if not _has_column(bind, 'giving_plans', 'from_participant_id'):

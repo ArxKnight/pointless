@@ -95,7 +95,7 @@ export function Install({onInstalled}: {onInstalled: () => void}) {
         <div className="card glow p-8 text-center">
           <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-green-500/20 text-3xl text-green-300">✓</div>
           <h1 className="text-3xl font-bold tracking-tight">Install complete</h1>
-          <p className="mt-3 text-slate-300">Quarterly Points is ready. Your first quarter plan has been generated automatically.</p>
+          <p className="mt-3 text-slate-300">Pointless is ready. Your first quarter plan has been generated automatically.</p>
           <p className="mt-2 text-sm text-slate-500">Redirecting to login…</p>
           <button onClick={onInstalled} className="mt-6 rounded-lg bg-indigo-500 px-5 py-3 font-semibold">Go to login now</button>
         </div>
@@ -184,7 +184,7 @@ export function Install({onInstalled}: {onInstalled: () => void}) {
               {canReuse ? (
                 <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-4 text-sm text-indigo-200 space-y-1">
                   <p className="font-medium">Existing database detected</p>
-                  <p>An existing Quarterly Points database was found with an admin account already set up. No new admin creation is needed — we'll reconnect to the existing data.</p>
+                  <p>An existing Pointless database was found with an admin account already set up. No new admin creation is needed — we'll reconnect to the existing data.</p>
                   {probe?.existing_admin && (
                     <p className="mt-1">Admin: <span className="font-mono">{probe.existing_admin.display_name}</span> ({probe.existing_admin.email})</p>
                   )}

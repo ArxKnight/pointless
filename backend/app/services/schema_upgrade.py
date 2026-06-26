@@ -54,7 +54,7 @@ def ensure_participant_schema(engine: Engine) -> None:
         if "quarters" in tables:
             columns = {c["name"] for c in inspector.get_columns("quarters")}
             additions = {
-                "status": "status VARCHAR(20) DEFAULT 'draft'",
+                "status": "status VARCHAR(20) DEFAULT 'published'",
                 "created_at": "created_at DATETIME NULL",
                 "published_at": "published_at DATETIME NULL",
                 "allocation_min": "allocation_min INTEGER DEFAULT 10",
@@ -67,7 +67,7 @@ def ensure_participant_schema(engine: Engine) -> None:
                 if name not in columns:
                     _add_column(conn, "quarters", ddl)
             if "status" not in columns:
-                conn.execute(text("UPDATE quarters SET status = CASE WHEN is_completed = 1 THEN 'completed' WHEN is_active = 1 THEN 'published' ELSE 'draft' END WHERE status IS NULL"))
+                conn.execute(text("UPDATE quarters SET status = CASE WHEN is_completed = 1 THEN 'completed' ELSE 'published' END WHERE status IS NULL OR status = 'draft'"))
             _create_index(conn, "quarters", "ix_quarters_status", "status", dialect)
         if "giving_plans" in tables:
             columns = {c["name"] for c in inspector.get_columns("giving_plans")}

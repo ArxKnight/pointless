@@ -123,7 +123,7 @@ class Quarter(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
-    status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
+    status: Mapped[str] = mapped_column(String(20), default="published", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     published_by_admin_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
