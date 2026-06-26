@@ -189,10 +189,11 @@ class AllocationEditIn(BaseModel): from_participant_id:int; to_participant_id:in
 class AdminInvitationCreate(BaseModel):
     invitee_name:str=Field(min_length=1, max_length=160)
     invitee_email:EmailStr|None=None
-    expires_in_hours:int=Field(default=168, ge=1, le=2160)
+    # 0 means never expires; otherwise choose an explicit period such as 24, 48, 168, 720 or 8760 hours.
+    expires_in_hours:int=Field(default=168, ge=0, le=876000)
 
 class AdminInvitationOut(BaseModel):
-    id:int; invitee_name:str; invitee_email:str|None=None; created_by_admin_id:int|None=None; created_by_name:str|None=None; created_at:datetime; expires_at:datetime; used_at:datetime|None=None; revoked_at:datetime|None=None; status:str
+    id:int; invitee_name:str; invitee_email:str|None=None; created_by_admin_id:int|None=None; created_by_name:str|None=None; created_at:datetime; expires_at:datetime; used_at:datetime|None=None; revoked_at:datetime|None=None; status:str; expires_label:str|None=None
 
 class AdminInvitationCreated(AdminInvitationOut):
     token:str

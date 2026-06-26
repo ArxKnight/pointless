@@ -137,6 +137,7 @@ def setup(data: InstallIn):
                     admin.email = data.admin.email
                     admin.password_hash = hash_password(data.admin.password)
                     admin.is_admin = True
+                    admin.is_super_admin = True
                     admin.is_active = True
                 else:
                     admin = User(
@@ -145,6 +146,7 @@ def setup(data: InstallIn):
                         email=data.admin.email,
                         password_hash=hash_password(data.admin.password),
                         is_admin=True,
+                        is_super_admin=True,
                         is_active=True,
                     )
                     session.add(admin)

@@ -34,6 +34,10 @@ def invitation_status(inv: AdminInvitation, now: datetime | None = None) -> str:
     return "pending"
 
 
+def is_never_expiring(inv: AdminInvitation) -> bool:
+    return inv.expires_at.year >= datetime.utcnow().year + 50
+
+
 def invitation_out(inv: AdminInvitation, db: Session, include_token: str | None = None) -> dict:
     creator = db.get(User, inv.created_by_admin_id) if inv.created_by_admin_id else None
     data = {
@@ -47,6 +51,7 @@ def invitation_out(inv: AdminInvitation, db: Session, include_token: str | None 
         "used_at": inv.used_at,
         "revoked_at": inv.revoked_at,
         "status": invitation_status(inv),
+        "expires_label": "Never" if is_never_expiring(inv) else None,
     }
     if include_token:
         data["token"] = include_token
@@ -81,12 +86,13 @@ def create_invitation(data: AdminInvitationCreate, db: Session = Depends(get_db)
     raw_token = secrets.token_urlsafe(32)
     while db.query(AdminInvitation).filter(AdminInvitation.token_hash == token_hash(raw_token)).first():
         raw_token = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + (timedelta(days=365 * 100) if data.expires_in_hours == 0 else timedelta(hours=data.expires_in_hours))
     inv = AdminInvitation(
         token_hash=token_hash(raw_token),
         invitee_name=data.invitee_name.strip(),
         invitee_email=str(data.invitee_email).lower() if data.invitee_email else None,
         created_by_admin_id=admin.id,
-        expires_at=datetime.utcnow() + timedelta(hours=data.expires_in_hours),
+        expires_at=expires_at,
     )
     db.add(inv); db.commit(); db.refresh(inv)
     return invitation_out(inv, db, raw_token)

@@ -10,6 +10,7 @@ import {MyTree} from './pages/MyTree';
 import {Overview} from './pages/Overview';
 import {History} from './pages/History';
 import {Quarters} from './pages/Quarters';
+import {Participants} from './pages/Participants';
 import {Settings} from './pages/Settings';
 import {AdminInvite} from './pages/AdminInvite';
 
@@ -46,6 +47,7 @@ export default function App(){
               <Route path="overview" element={<Overview/>}/>
               <Route path="history" element={<History/>}/>
               <Route path="settings" element={<Settings user={user}/>}/>
+              {user.is_admin&&<Route path="participants" element={<Participants/>}/>}
               {user.is_admin&&<Route path="quarters" element={<Quarters/>}/>}
               <Route path="*" element={<Navigate to="/"/>}/>
             </Route>

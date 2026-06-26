@@ -33,6 +33,19 @@ def active_super_admin_count(db: Session, excluding_user_id: int | None = None) 
     return q.count()
 
 
+def installer_admin_id(db: Session) -> int | None:
+    row = db.query(User.id).filter(User.is_admin == True).order_by(User.id.asc()).first()  # noqa: E712
+    return row[0] if row else None
+
+
+def ensure_installer_admin_not_demoted(db: Session, user: User, data: UserAdminUpdate | None = None, deleting: bool = False) -> None:
+    first_id = installer_admin_id(db)
+    if first_id is None or user.id != first_id:
+        return
+    if deleting or (data is not None and data.is_admin is False):
+        raise HTTPException(400, "The installer-created Admin cannot be demoted from Admin")
+
+
 def ensure_not_removing_last_super_admin(db: Session, user: User, data: UserAdminUpdate | None = None, deleting: bool = False) -> None:
     if not getattr(user, "is_super_admin", False) or not user.is_active or not user.is_admin:
         return
@@ -55,6 +68,7 @@ def update_admin(user_id: int, data: UserAdminUpdate, db: Session = Depends(get_
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
+    ensure_installer_admin_not_demoted(db, user, data)
     ensure_not_removing_last_super_admin(db, user, data)
     if data.username is not None:
         username = data.username.strip()
@@ -95,6 +109,7 @@ def delete_admin(user_id: int, db: Session = Depends(get_db), admin: User = Depe
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
+    ensure_installer_admin_not_demoted(db, user, deleting=True)
     ensure_not_removing_last_super_admin(db, user, deleting=True)
     # Preserve historical FK references by deactivating rather than physical delete.
     user.is_active = False
