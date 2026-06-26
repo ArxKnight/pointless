@@ -37,13 +37,36 @@ def _normalise_database(database: dict) -> dict:
     }
 
 
-def save_install_config(database: dict) -> dict:
-    cfg = {"database": _normalise_database(database)}
+def _write_config(cfg: dict) -> dict:
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(cfg, indent=2))
     os.chmod(path, 0o600)
     return cfg
+
+
+def save_install_config(database: dict) -> dict:
+    cfg = load_config()
+    cfg["database"] = _normalise_database(database)
+    return _write_config(cfg)
+
+
+def access_settings() -> dict:
+    cfg = load_config()
+    access = cfg.get("access") or {}
+    return {
+        "local_only_enabled": bool(access.get("local_only_enabled", False)),
+        "block_ans_network_enabled": bool(access.get("block_ans_network_enabled", True)),
+    }
+
+
+def save_access_settings(access: dict) -> dict:
+    current = access_settings()
+    current.update({k: bool(v) for k, v in access.items() if k in current})
+    cfg = load_config()
+    cfg["access"] = current
+    _write_config(cfg)
+    return current
 
 
 def database_url() -> str | None:

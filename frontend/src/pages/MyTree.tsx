@@ -8,7 +8,7 @@ export function MyTree(){
   const [data,setData]=useState<PublicTree|null>(null);
   const [error,setError]=useState('');
   const [loading,setLoading]=useState(true);
-  const load=useCallback(()=>{setLoading(true);setError('');api<PublicTree>(`/public/tree/${slug}`).then(setData).catch(e=>setError(mapPublicError(e.message))).finally(()=>setLoading(false))},[slug]);
+  const load=useCallback(()=>{setLoading(true);setError('');api<PublicTree>(`/public/${slug}`).then(setData).catch(e=>setError(mapPublicError(e.message))).finally(()=>setLoading(false))},[slug]);
   useEffect(()=>{
     document.title='My Giving Tree';
     const meta=document.createElement('meta');

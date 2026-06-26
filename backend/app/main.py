@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 import logging
 import sys
 from pathlib import Path
@@ -13,11 +14,22 @@ from app.runtime_config import is_installed
 from app.services.auth_service import hash_password
 from app.services.participant_service import backfill_participants_from_department_members
 from app.services.schema_upgrade import ensure_team_schema, ensure_participant_schema, ensure_admin_schema
-from app.api.v1 import auth, members, quarters, plans, analytics, install, users, teams, participants, compatibility, public, invitations
+from app.services.access_control import access_decision, client_ip_from_headers
+from app.api.v1 import auth, members, quarters, plans, analytics, install, users, teams, participants, compatibility, public, invitations, settings as app_settings
 
 app = FastAPI(title="Pointless", description="Because patterns raise questions", version="1.0.0")
 logger = logging.getLogger("pointless.startup")
 app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+
+@app.middleware("http")
+async def enforce_network_access(request: Request, call_next):
+    client_ip = client_ip_from_headers(dict(request.headers), request.client.host if request.client else None)
+    allowed, reason = access_decision(client_ip)
+    if not allowed:
+        return JSONResponse({"detail": reason}, status_code=403)
+    return await call_next(request)
+
 app.include_router(install.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(members.router, prefix="/api")
@@ -30,6 +42,7 @@ app.include_router(participants.router, prefix="/api")
 app.include_router(compatibility.router, prefix="/api")
 app.include_router(public.router, prefix="/api")
 app.include_router(invitations.router, prefix="/api")
+app.include_router(app_settings.router, prefix="/api")
 
 FRONTEND_ROOT = Path("/usr/share/nginx/html")
 

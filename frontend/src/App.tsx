@@ -40,9 +40,21 @@ export default function App(){
       <Routes>
         <Route path="tree/:slug" element={<MyTree/>}/>
         <Route path="admin-invite/:token" element={<AdminInvite/>}/>
-        {!user
-          ? <Route path="*" element={<Login setUser={setUser}/>}/>
-          : <Route element={<Layout user={user} setUser={setUser}/>}>
+        {!user ? (
+          <>
+            <Route path="login" element={<Login setUser={setUser}/>}/>
+            <Route path="settings/*" element={<Login setUser={setUser}/>}/>
+            <Route path="overview" element={<Login setUser={setUser}/>}/>
+            <Route path="history" element={<Login setUser={setUser}/>}/>
+            <Route path="participants/*" element={<Login setUser={setUser}/>}/>
+            <Route path="quarters/*" element={<Login setUser={setUser}/>}/>
+            <Route path=":slug" element={<MyTree/>}/>
+            <Route path="*" element={<Login setUser={setUser}/>}/>
+          </>
+        ) : (
+          <>
+            <Route path=":slug" element={<MyTree/>}/>
+            <Route element={<Layout user={user} setUser={setUser}/>}>
               <Route index element={<Dashboard user={user}/>}/>
               <Route path="overview" element={<Overview/>}/>
               <Route path="history" element={<History/>}/>
@@ -51,7 +63,8 @@ export default function App(){
               {user.is_admin&&<Route path="quarters" element={<Quarters/>}/>}
               <Route path="*" element={<Navigate to="/"/>}/>
             </Route>
-        }
+          </>
+        )}
       </Routes>
     </BrowserRouter>
   );

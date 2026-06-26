@@ -44,6 +44,14 @@ class UserAdminUpdate(BaseModel):
     is_active:bool|None=None
     password:str|None=Field(default=None, min_length=8)
 
+class AccessSettingsOut(BaseModel):
+    local_only_enabled:bool=False
+    block_ans_network_enabled:bool=True
+
+class AccessSettingsIn(BaseModel):
+    local_only_enabled:bool|None=None
+    block_ans_network_enabled:bool|None=None
+
 class TeamGroupBase(BaseModel):
     name:str=Field(min_length=1, max_length=120)
     description:str|None=None

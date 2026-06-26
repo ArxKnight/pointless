@@ -73,6 +73,15 @@ def public_tree_payload(db: Session, slug: str) -> dict:
 
 
 @router.get("/tree/{slug}")
+def public_tree_legacy(slug: str, response: Response, db: Session = Depends(get_db)):
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    try:
+        return public_tree_payload(db, slug)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+
+
+@router.get("/{slug}")
 def public_tree(slug: str, response: Response, db: Session = Depends(get_db)):
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     try:
