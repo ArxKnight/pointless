@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse
 import logging
 import sys
 from pathlib import Path
@@ -27,7 +27,7 @@ async def enforce_network_access(request: Request, call_next):
     client_ip = client_ip_from_headers(dict(request.headers), request.client.host if request.client else None)
     allowed, reason = access_decision(client_ip)
     if not allowed:
-        return JSONResponse({"detail": reason}, status_code=403)
+        return HTMLResponse("<h1>404 Not Found</h1>", status_code=404)
     return await call_next(request)
 
 app.include_router(install.router, prefix="/api")

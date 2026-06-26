@@ -1,5 +1,7 @@
 import pytest
+from fastapi.testclient import TestClient
 
+from app import main as main_app
 from app.services import access_control
 from app.services.access_control import access_decision, client_ip_from_headers, is_local_address
 
@@ -12,7 +14,8 @@ def test_local_only_allows_private_and_blocks_public_addresses():
 
     allowed, reason = access_decision("8.8.8.8", settings)
     assert allowed is False
-    assert "Internet access is disabled" in reason
+    assert reason == "Not Found"
+    assert "Internet access" not in reason
 
 
 def test_ans_network_block_detects_known_ans_ranges():
@@ -20,11 +23,15 @@ def test_ans_network_block_detects_known_ans_ranges():
 
     allowed, reason = access_decision("81.201.139.20", settings)
     assert allowed is False
-    assert "ANS/UKFast" in reason
+    assert reason == "Not Found"
+    assert "ANS" not in reason
+    assert "UKFast" not in reason
 
     allowed, reason = access_decision("176.124.53.12", settings)
     assert allowed is False
-    assert "ANS/UKFast" in reason
+    assert reason == "Not Found"
+    assert "ANS" not in reason
+    assert "UKFast" not in reason
 
 
 def test_ans_network_block_can_be_disabled():
@@ -66,3 +73,15 @@ def test_reverse_dns_ukfast_detection(monkeypatch):
     blocked, reason = access_control._detect_ans_network("8.8.8.8")
     assert blocked is True
     assert "srvlist.ukfast.net" in reason
+
+
+def test_middleware_hides_access_control_reason_behind_404(monkeypatch):
+    monkeypatch.setattr(main_app, "access_decision", lambda client_ip: (False, "Access from the ANS/UKFast network is blocked."))
+
+    response = TestClient(main_app.app).get("/api/health")
+
+    assert response.status_code == 404
+    assert "404 Not Found" in response.text
+    assert "ANS" not in response.text
+    assert "UKFast" not in response.text
+    assert "Internet access" not in response.text

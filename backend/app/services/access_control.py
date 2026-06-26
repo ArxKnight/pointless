@@ -158,9 +158,9 @@ def is_ans_network(ip_text: str | None) -> tuple[bool, str]:
 def access_decision(client_ip: str | None, settings: dict | None = None) -> tuple[bool, str]:
     cfg = settings or access_settings()
     if cfg.get("local_only_enabled") and not is_local_address(client_ip):
-        return False, "Internet access is disabled by an administrator. Use a local network IP address to access this app."
+        return False, "Not Found"
     if cfg.get("block_ans_network_enabled", True):
         blocked, reason = is_ans_network(client_ip)
         if blocked:
-            return False, f"Access from the ANS/UKFast network is blocked ({reason})."
+            return False, "Not Found"
     return True, "ok"
