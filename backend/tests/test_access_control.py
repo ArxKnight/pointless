@@ -33,10 +33,10 @@ def test_ans_network_block_can_be_disabled():
     assert access_decision("81.201.139.20", settings)[0] is True
 
 
-def test_x_forwarded_for_uses_rightmost_address():
-    headers = {"x-forwarded-for": "10.0.0.99, 81.201.139.20"}
+def test_x_forwarded_for_uses_rightmost_public_address():
+    headers = {"x-forwarded-for": "8.8.8.8, 81.201.139.20, 172.18.0.2"}
 
-    assert client_ip_from_headers(headers, "172.18.0.2") == "81.201.139.20"
+    assert client_ip_from_headers(headers, "172.18.0.3") == "81.201.139.20"
 
 
 def test_reverse_dns_ukfast_detection(monkeypatch):

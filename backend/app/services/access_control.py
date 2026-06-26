@@ -17,11 +17,18 @@ _ip_cache: dict[str, tuple[float, bool, str]] = {}
 def client_ip_from_headers(headers: dict, fallback: str | None = None) -> str | None:
     forwarded = headers.get("x-forwarded-for") or headers.get("X-Forwarded-For")
     if forwarded:
-        # nginx appends the real remote address to any supplied chain, so the right-most
-        # valid value is the least spoofable address visible to this app container.
-        for part in reversed([p.strip() for p in forwarded.split(",")]):
-            if part:
-                return part
+        # Prefer the right-most public address: nginx/proxies append to the chain,
+        # so this avoids trusting a client-supplied spoofed first value while still
+        # skipping local Docker/proxy hops.
+        valid: list[str] = []
+        for part in [p.strip() for p in forwarded.split(",") if p.strip()]:
+            if parse_ip(part) is not None:
+                valid.append(part)
+        public = [part for part in valid if not is_local_address(part)]
+        if public:
+            return public[-1]
+        if valid:
+            return valid[-1]
     return headers.get("x-real-ip") or headers.get("X-Real-IP") or fallback
 
 
