@@ -29,6 +29,7 @@ def participant_out(db: Session, p: Participant, request: Request | None = None)
         "updated_at": p.updated_at,
         "public_url": f"/tree/{p.slug}",
         "included_in_current_quarter": included,
+        "current_quarter_status": "deactivated_but_included" if included and not p.is_active else ("included" if included else "excluded"),
     }
 
 

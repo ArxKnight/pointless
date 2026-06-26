@@ -21,7 +21,7 @@ from app.services.participant_generator import (
     validate_feasibility,
 )
 from app.api.v1.public import public_tree_payload
-from app.api.v1.quarters import generate_activate_quarter, start_generate_activate_quarter
+from app.api.v1.quarters import cancel_generation, generate_activate_quarter, generation_status, start_generate_activate_quarter
 from app.schemas.api import QuarterGenerateActivateIn
 
 
@@ -174,6 +174,27 @@ def test_generate_activate_route_queues_background_work_and_reuses_generating_qu
     assert second["validation"]["pending"] is True
     assert len(tasks.tasks) == 1
     assert db.query(QuarterParticipant).filter_by(quarter_id=q.id).count() == len(participants)
+
+
+def test_generation_status_and_cancel_reports_stuck_stage(db):
+    admin = User(username="admin", display_name="Admin", email="admin@example.com", password_hash=hash_password("password"), is_admin=True, is_super_admin=True, is_active=True)
+    db.add(admin)
+    participants = add_participants(db, ["Adam", "Alex", "Charlie"])
+    db.commit()
+
+    data = QuarterGenerateActivateIn(year=2026, quarter=2, label="Q2 2026", participant_ids=[p.id for p in participants], seed=7)
+    start_generate_activate_quarter(data, BackgroundTasks(), db, admin)
+    q = db.query(Quarter).filter_by(year=2026, quarter=2).one()
+
+    status = generation_status(q.id, db, admin)
+    cancelled = cancel_generation(q.id, db, admin)
+    status_after = generation_status(q.id, db, admin)
+
+    assert status["status"] == "generating"
+    assert status["logs"]
+    assert cancelled["ok"] is True
+    assert status_after["cancel_requested"] is True
+    assert "stage" in cancelled
 
 
 def test_generator_creates_compatible_exact_50_uneven_whole_number_plan(db):

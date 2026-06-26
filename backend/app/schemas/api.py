@@ -139,7 +139,7 @@ class ParticipantUpdate(BaseModel):
 
 class ParticipantOut(BaseModel):
     id:int; display_name:str; slug:str; is_active:bool; notes:str|None=None; created_at:datetime; updated_at:datetime
-    public_url:str|None=None; included_in_current_quarter:bool=False
+    public_url:str|None=None; included_in_current_quarter:bool=False; current_quarter_status:str="excluded"
     class Config: from_attributes=True
 
 class ParticipantBulkOut(BaseModel):

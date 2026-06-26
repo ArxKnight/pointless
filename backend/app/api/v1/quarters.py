@@ -1,6 +1,8 @@
 from datetime import datetime
 import logging
+import re
 import sys
+import threading
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
@@ -14,11 +16,39 @@ from app.services.quarter_lookup import current_published_quarter, current_calen
 
 router = APIRouter(prefix="/quarters", tags=["quarters"])
 logger = logging.getLogger("app.quarters")
+_generation_jobs: dict[int, dict] = {}
+_generation_lock = threading.Lock()
+
+
+def _generation_state(quarter_id: int) -> dict:
+    with _generation_lock:
+        return _generation_jobs.setdefault(quarter_id, {"logs": [], "stage": "Queued", "cancel_requested": False, "started_at": datetime.utcnow().isoformat(), "finished_at": None})
+
+
+def _update_generation_state(quarter_id: int, rendered: str) -> None:
+    state = _generation_state(quarter_id)
+    with _generation_lock:
+        state["stage"] = rendered
+        state["updated_at"] = datetime.utcnow().isoformat()
+        state["logs"].append({"at": state["updated_at"], "message": f"[pointless] {rendered}"})
+        state["logs"] = state["logs"][-400:]
+
+
+def generation_cancel_requested(quarter_id: int) -> bool:
+    return bool(_generation_state(quarter_id).get("cancel_requested"))
+
+
+def assert_generation_not_cancelled(quarter_id: int) -> None:
+    if generation_cancel_requested(quarter_id):
+        raise RuntimeError("Quarter generation was cancelled by an Admin")
 
 
 def qlog(level: str, message: str, *args) -> None:
     getattr(logger, level)(message, *args)
     rendered = message % args if args else message
+    match = re.search(r"quarter_id=(\d+)", rendered)
+    if match:
+        _update_generation_state(int(match.group(1)), rendered)
     print(f"[pointless] {rendered}", file=sys.stderr, flush=True)
 
 
@@ -292,10 +322,22 @@ def _run_generate_activate_background(quarter_id: int, seed: int | None, admin_i
         if not q or not admin:
             qlog("error", "Quarter background generation could not start: quarter_id=%s admin_id=%s", quarter_id, admin_id)
             return
+        assert_generation_not_cancelled(q.id)
         validation = _generate_plan_rows(db, q, seed, admin)
+        assert_generation_not_cancelled(q.id)
         _publish_quarter(db, q, admin)
         db.commit()
         qlog("info", "Quarter background generate-activate complete: quarter_id=%s label=%s status=%s active=%s", q.id, q.label, q.status, q.is_active)
+        _generation_state(q.id)["finished_at"] = datetime.utcnow().isoformat()
+    except RuntimeError as exc:
+        db.rollback()
+        q = db.get(Quarter, quarter_id)
+        if q:
+            q.status = "cancelled"
+            q.is_active = False
+            db.commit()
+        qlog("warning", "Quarter background generation cancelled: quarter_id=%s stage=%s", quarter_id, _generation_state(quarter_id).get("stage"))
+        _generation_state(quarter_id)["finished_at"] = datetime.utcnow().isoformat()
     except ValueError as exc:
         db.rollback()
         q = db.get(Quarter, quarter_id)
@@ -304,6 +346,7 @@ def _run_generate_activate_background(quarter_id: int, seed: int | None, admin_i
             q.is_active = False
             db.commit()
         qlog("error", "Quarter background generation failed validation: quarter_id=%s error=%s", quarter_id, exc)
+        _generation_state(quarter_id)["finished_at"] = datetime.utcnow().isoformat()
     except Exception as exc:
         db.rollback()
         q = db.get(Quarter, quarter_id)
@@ -313,6 +356,7 @@ def _run_generate_activate_background(quarter_id: int, seed: int | None, admin_i
             db.commit()
         logger.exception("Quarter background generation crashed: quarter_id=%s", quarter_id)
         qlog("error", "Quarter background generation crashed: quarter_id=%s error=%s", quarter_id, exc)
+        _generation_state(quarter_id)["finished_at"] = datetime.utcnow().isoformat()
     finally:
         db.close()
 
@@ -356,6 +400,28 @@ def _generate_activate_quarter(data: QuarterGenerateActivateIn, db: Session, adm
         db.rollback(); logger.exception("Quarter generate-activate failed validation: year=%s quarter=%s label=%s", data.year, data.quarter, data.label); raise HTTPException(400, str(exc))
     except Exception:
         db.rollback(); logger.exception("Quarter generate-activate crashed: year=%s quarter=%s label=%s", data.year, data.quarter, data.label); raise
+
+
+@router.get("/{quarter_id}/generation-status")
+def generation_status(quarter_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    q = db.get(Quarter, quarter_id)
+    if not q:
+        raise HTTPException(404, "Quarter not found")
+    state = _generation_state(quarter_id)
+    return {"quarter_id": quarter_id, "status": q.status, "stage": state.get("stage"), "cancel_requested": bool(state.get("cancel_requested")), "started_at": state.get("started_at"), "updated_at": state.get("updated_at"), "finished_at": state.get("finished_at"), "logs": state.get("logs", [])}
+
+
+@router.post("/{quarter_id}/cancel-generation")
+def cancel_generation(quarter_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    q = db.get(Quarter, quarter_id)
+    if not q:
+        raise HTTPException(404, "Quarter not found")
+    if q.status != "generating":
+        raise HTTPException(409, "Only an in-progress quarter generation can be cancelled")
+    state = _generation_state(quarter_id)
+    state["cancel_requested"] = True
+    qlog("warning", "Quarter generation cancellation requested: quarter_id=%s admin_id=%s stage=%s", quarter_id, admin.id, state.get("stage"))
+    return {"ok": True, "stage": state.get("stage")}
 
 
 @router.post("/{quarter_id}/generate")
