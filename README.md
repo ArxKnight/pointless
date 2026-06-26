@@ -25,6 +25,8 @@ arxknight/pointless:0.4.0
 
 The app container includes Nginx serving the React frontend and FastAPI behind `/api`. MySQL remains a separate persistent database.
 
+The Docker Hub image is published for both `linux/amd64` and `linux/arm64`, so it can run on standard x86 servers and ARM64 NAS devices such as UGREEN NAS systems.
+
 ## Run from source
 
 ```bash
