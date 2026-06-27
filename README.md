@@ -1,5 +1,9 @@
 # Pointless
 
+<p align="center">
+  <img src="frontend/public/assets/branding/pointless_logo.png" alt="Pointless logo" width="520">
+</p>
+
 Because patterns raise questions. Self-hosted FastAPI + React app in one Docker container, with MySQL as the persistent database.
 
 ## Core purpose
