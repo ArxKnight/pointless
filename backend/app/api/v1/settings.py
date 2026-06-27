@@ -26,7 +26,8 @@ def get_smtp_settings(admin: User = Depends(require_admin)):
 @router.patch("/smtp", response_model=SmtpSettingsOut)
 def update_smtp_settings(data: SmtpSettingsIn, admin: User = Depends(require_admin)):
     payload = data.model_dump(exclude_unset=True)
-    if payload.get("use_ssl") and payload.get("use_tls"):
+    updated = {**smtp_settings(), **payload}
+    if updated.get("use_ssl") and updated.get("use_tls"):
         raise HTTPException(400, "Choose either SSL or STARTTLS, not both")
     return save_smtp_settings(payload)
 

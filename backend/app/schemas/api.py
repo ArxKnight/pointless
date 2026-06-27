@@ -34,7 +34,7 @@ class SmtpSettingsIn(BaseModel):
     username:str|None=None
     password:str|None=None
     clear_password:bool|None=None
-    from_email:EmailStr|None=None
+    from_email:str|None=None
     from_name:str|None=None
     use_tls:bool|None=None
     use_ssl:bool|None=None
