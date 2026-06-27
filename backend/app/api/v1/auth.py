@@ -64,6 +64,11 @@ def change_password(data: PasswordChangeIn, db: Session = Depends(get_db), user:
     return {"ok": True}
 
 
+@router.get("/password-reset/enabled")
+def password_reset_enabled():
+    return {"enabled": smtp_is_enabled()}
+
+
 @router.post("/password-reset/request")
 def request_password_reset(data: PasswordResetRequestIn, request: Request, db: Session = Depends(get_db)):
     # Return the same response for every input so the login page cannot be used to enumerate admin accounts.

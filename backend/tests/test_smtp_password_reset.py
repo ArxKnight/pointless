@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.api.v1.auth import change_password, confirm_password_reset, _hash_token
+from app.api.v1.auth import change_password, confirm_password_reset, password_reset_enabled, _hash_token
 from app.models import PasswordResetToken, User
 from app.database import Base
 from app.schemas.api import PasswordChangeIn, PasswordResetConfirmIn
@@ -52,3 +52,11 @@ def test_smtp_settings_do_not_expose_password(tmp_path, monkeypatch):
     assert public["enabled"] is True
     assert public["password_set"] is True
     assert "password" not in public
+
+
+def test_public_password_reset_enabled_follows_smtp_config(tmp_path, monkeypatch):
+    path = tmp_path / "config.json"
+    monkeypatch.setenv("APP_CONFIG_PATH", str(path))
+    assert password_reset_enabled() == {"enabled": False}
+    save_smtp_settings({"enabled": True, "host": "smtp.example.com", "port": 587})
+    assert password_reset_enabled() == {"enabled": True}

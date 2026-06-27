@@ -163,6 +163,17 @@ The generator uses compatibility-aware constraint generation:
 
 It first tries balanced uneven ring-style allocations for good variety. If that cannot satisfy compatibility, it falls back to a bounded max-flow solver over the allowed directed graph. Every result is validated before being saved or published.
 
+### Randomness and repeatability
+
+Generation is randomised, but it is still constrained: random choices can change *which* valid allocation is selected, but they cannot override compatibility rules or the exact 50-points-sent/50-points-received totals.
+
+- If a seed is supplied when generating a quarter, the same participants, compatibility rules, history and seed will produce the same allocation. This is useful for debugging or reproducing a result.
+- If no seed is supplied, the backend creates a fresh pseudo-random generator for that run, so repeated generation attempts can produce different valid allocations.
+- Randomness is used to shuffle participant order, allowed edge order, split-pattern order and tie-breaks between otherwise similar candidate allocations.
+- The solver favours variety rather than pure randomness. It applies soft penalties to less desirable but valid shapes, such as repeated recent pairings, reciprocal mirror pairings, single-recipient allocations and identical/even split patterns.
+- Recent history is treated as a preference, not an absolute ban: the generator tries to avoid recent pairings, but it may reuse them if the compatibility graph is tight and reuse is required to make everyone balance exactly.
+- The final allocation is always validated after generation, so random selection cannot save an invalid plan.
+
 Feasibility validation reports clear errors such as:
 
 - participant has no eligible recipients
