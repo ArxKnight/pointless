@@ -5,6 +5,7 @@ from app.database import get_db
 from app.models import CompatibilityGroup, CompatibilityGroupMember, CompatibilityRule, Participant, User
 from app.schemas.api import CompatibilityBulkIn, CompatibilityCopyIn, CompatibilityGroupIn, CompatibilityGroupOut, CompatibilityRuleIn, CompatibilityRuleOut
 from app.services.auth_service import require_admin
+from app.services.audit_service import add_audit_log
 
 router = APIRouter(prefix="/compatibility", tags=["compatibility"])
 
@@ -43,6 +44,7 @@ def set_rule(data: CompatibilityRuleIn, db: Session = Depends(get_db), admin: Us
     if data.mutual:
         reverse = upsert_rule(db, data.to_participant_id, data.from_participant_id, data.is_allowed)
         if reverse: changed.append(reverse)
+    add_audit_log(db, "compatibility_rule_changed", actor=admin, target_type="compatibility", message="Compatibility rule was changed", metadata={"from_participant_id": data.from_participant_id, "to_participant_id": data.to_participant_id, "is_allowed": data.is_allowed, "mutual": data.mutual, "changed_count": len(changed)})
     db.commit()
     return changed
 
@@ -68,13 +70,15 @@ def bulk_set(data: CompatibilityBulkIn, db: Session, admin: User):
             if data.mutual:
                 reverse = upsert_rule(db, t, f, data.is_allowed)
                 if reverse: changed.append(reverse)
+    add_audit_log(db, "compatibility_rule_changed", actor=admin, target_type="compatibility", message="Compatibility rules were changed in bulk", metadata={"from_participant_ids": data.from_participant_ids, "to_participant_ids": data.to_participant_ids, "is_allowed": data.is_allowed, "mutual": data.mutual, "changed_count": len(changed)})
     db.commit()
     return changed
 
 
 @router.post("/clear")
 def clear_rules(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    db.query(CompatibilityRule).delete()
+    deleted = db.query(CompatibilityRule).delete()
+    add_audit_log(db, "compatibility_rule_changed", actor=admin, target_type="compatibility", message="All compatibility rules were cleared", metadata={"deleted_count": deleted})
     db.commit()
     return {"ok": True}
 
@@ -88,8 +92,10 @@ def copy_rules(data: CompatibilityCopyIn, db: Session = Depends(get_db), admin: 
         if rule.to_participant_id == data.target_participant_id:
             continue
         copied.append(upsert_rule(db, data.target_participant_id, rule.to_participant_id, rule.is_allowed))
+    copied = [r for r in copied if r]
+    add_audit_log(db, "compatibility_rule_changed", actor=admin, target_type="compatibility", message="Compatibility rules were copied between participants", metadata={"source_participant_id": data.source_participant_id, "target_participant_id": data.target_participant_id, "copied_count": len(copied)})
     db.commit()
-    return [r for r in copied if r]
+    return copied
 
 
 def group_out(db: Session, group: CompatibilityGroup) -> dict:
@@ -109,6 +115,7 @@ def create_group(data: CompatibilityGroupIn, db: Session = Depends(get_db), admi
     for pid in data.participant_ids:
         ensure_participant(db, pid)
         db.add(CompatibilityGroupMember(group_id=g.id, participant_id=pid))
+    add_audit_log(db, "compatibility_rule_changed", actor=admin, target_type="compatibility_group", target_id=g.id, target_name=g.name, message=f"Compatibility group {g.name} was created", metadata={"participant_ids": data.participant_ids})
     db.commit(); db.refresh(g)
     return group_out(db, g)
 
@@ -123,5 +130,6 @@ def allow_group(group_id: int, db: Session = Depends(get_db), admin: User = Depe
         for b in ids:
             r = upsert_rule(db, a, b, True)
             if r: changed.append(r)
+    add_audit_log(db, "compatibility_rule_changed", actor=admin, target_type="compatibility_group", target_id=group.id, target_name=group.name, message=f"Compatibility group {group.name} was allowed internally", metadata={"participant_ids": ids, "changed_count": len(changed)})
     db.commit()
     return changed

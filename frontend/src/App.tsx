@@ -7,13 +7,13 @@ import {Login} from './pages/Login';
 import {Install} from './pages/Install';
 import {Dashboard} from './pages/Dashboard';
 import {MyTree} from './pages/MyTree';
-import {Overview} from './pages/Overview';
 import {History} from './pages/History';
 import {Quarters} from './pages/Quarters';
 import {Participants} from './pages/Participants';
 import {Settings} from './pages/Settings';
 import {AdminInvite} from './pages/AdminInvite';
 import {ResetPassword} from './pages/ResetPassword';
+import {AuditLog} from './pages/AuditLog';
 
 type InstallStatus={installed:boolean;database_configured:boolean};
 
@@ -46,7 +46,6 @@ export default function App(){
           <>
             <Route path="login" element={<Login setUser={setUser}/>}/>
             <Route path="settings/*" element={<Login setUser={setUser}/>}/>
-            <Route path="overview" element={<Login setUser={setUser}/>}/>
             <Route path="history" element={<Login setUser={setUser}/>}/>
             <Route path="participants/*" element={<Login setUser={setUser}/>}/>
             <Route path="quarters/*" element={<Login setUser={setUser}/>}/>
@@ -58,8 +57,8 @@ export default function App(){
             <Route path=":slug" element={<MyTree/>}/>
             <Route element={<Layout user={user} setUser={setUser}/>}>
               <Route index element={<Dashboard user={user}/>}/>
-              <Route path="overview" element={<Overview/>}/>
               <Route path="history" element={<History/>}/>
+              {user.is_admin&&<Route path="audit-log" element={<AuditLog/>}/>}
               <Route path="settings" element={<Settings user={user}/>}/>
               {user.is_admin&&<Route path="participants" element={<Participants/>}/>}
               {user.is_admin&&<Route path="quarters" element={<Quarters/>}/>}

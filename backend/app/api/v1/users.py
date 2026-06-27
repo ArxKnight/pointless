@@ -5,6 +5,7 @@ from app.database import get_db
 from app.models import Team, User
 from app.schemas.api import UserAdminOut, UserAdminUpdate, UserRoleUpdate, UserTeamUpdate
 from app.services.auth_service import hash_password, require_admin
+from app.services.audit_service import add_audit_log
 from app.api.v1.invitations import require_super_admin
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -72,6 +73,7 @@ def update_admin(user_id: int, data: UserAdminUpdate, db: Session = Depends(get_
         raise HTTPException(404, "User not found")
     ensure_installer_admin_not_demoted(db, user, data)
     ensure_not_removing_last_super_admin(db, user, data)
+    was_active = user.is_active
     if data.username is not None:
         username = data.username.strip()
         if not username:
@@ -101,6 +103,8 @@ def update_admin(user_id: int, data: UserAdminUpdate, db: Session = Depends(get_
         user.is_active = data.is_active
     if data.password:
         user.password_hash = hash_password(data.password)
+    event = "admin_deactivated" if was_active and user.is_active is False else "admin_updated"
+    add_audit_log(db, event, actor=admin, target_type="admin", target_id=user.id, target_name=user.username, message=(f"Admin {user.username} was deactivated" if event == "admin_deactivated" else f"Admin {user.username} was updated"), metadata=data.model_dump(exclude_unset=True, exclude={"password"}))
     db.commit(); db.refresh(user)
     return user_out(user)
 
@@ -115,6 +119,7 @@ def delete_admin(user_id: int, db: Session = Depends(get_db), admin: User = Depe
     ensure_not_removing_last_super_admin(db, user, deleting=True)
     # Preserve historical FK references by deactivating rather than physical delete.
     user.is_active = False
+    add_audit_log(db, "admin_deactivated", actor=admin, target_type="admin", target_id=user.id, target_name=user.username, message=f"Admin {user.username} was deactivated")
     db.commit(); db.refresh(user)
     return {"ok": True, "deactivated": True, "user": user_out(user)}
 

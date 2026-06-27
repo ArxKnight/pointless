@@ -13,6 +13,7 @@ from app.schemas.api import AllocationEditIn, GenerateIn, QuarterCreateIn, Quart
 from app.services.auth_service import get_current_user, require_admin
 from app.services.participant_generator import GenerationSettings, generate_distribution, validate_distribution, validate_feasibility
 from app.services.quarter_lookup import current_published_quarter, current_calendar_quarter
+from app.services.audit_service import add_audit_log
 
 router = APIRouter(prefix="/quarters", tags=["quarters"])
 logger = logging.getLogger("app.quarters")
@@ -276,6 +277,7 @@ def delete_quarter(quarter_id: int, db: Session = Depends(get_db), admin: User =
         raise HTTPException(409, "This quarter has sent-point history and cannot be deleted safely")
     db.query(GivingPlan).filter(GivingPlan.quarter_id == q.id).delete()
     db.query(QuarterParticipant).filter(QuarterParticipant.quarter_id == q.id).delete()
+    add_audit_log(db, "quarter_deleted", actor=admin, target_type="quarter", target_id=q.id, target_name=q.label, message=f"Quarter {q.label} was deleted", metadata={"year": q.year, "quarter": q.quarter})
     db.delete(q); db.commit()
     return {"ok": True}
 
@@ -326,6 +328,7 @@ def _run_generate_activate_background(quarter_id: int, seed: int | None, admin_i
         validation = _generate_plan_rows(db, q, seed, admin)
         assert_generation_not_cancelled(q.id)
         _publish_quarter(db, q, admin)
+        add_audit_log(db, "quarter_generated", actor=admin, target_type="quarter", target_id=q.id, target_name=q.label, message=f"Quarter {q.label} was generated and published", metadata={"year": q.year, "quarter": q.quarter, "participant_count": len(quarter_participants(db, q.id)), "background": True})
         db.commit()
         qlog("info", "Quarter background generate-activate complete: quarter_id=%s label=%s status=%s active=%s", q.id, q.label, q.status, q.is_active)
         _generation_state(q.id)["finished_at"] = datetime.utcnow().isoformat()
@@ -387,6 +390,7 @@ def _generate_activate_quarter(data: QuarterGenerateActivateIn, db: Session, adm
             return {"quarter": QuarterOut.model_validate(q), "plans": [], "validation": {"valid": False, "pending": True, "errors": [], "warnings": []}}
         validation = _generate_plan_rows(db, q, data.seed, admin)
         _publish_quarter(db, q, admin)
+        add_audit_log(db, "quarter_generated", actor=admin, target_type="quarter", target_id=q.id, target_name=q.label, message=f"Quarter {q.label} was generated and published", metadata={"year": q.year, "quarter": q.quarter, "participant_count": len(set(data.participant_ids)), "background": False})
         db.commit(); db.refresh(q)
         qlog("info", "Quarter generate-activate complete: quarter_id=%s label=%s status=%s active=%s", q.id, q.label, q.status, q.is_active)
         return {"quarter": QuarterOut.model_validate(q), "plans": plan_rows(db, q.id), "validation": validation}
@@ -432,6 +436,7 @@ def generate_quarter(quarter_id: int, data: QuarterGenerateIn = QuarterGenerateI
     try:
         validation = _generate_plan_rows(db, q, data.seed, admin)
         _publish_quarter(db, q, admin)
+        add_audit_log(db, "quarter_generated", actor=admin, target_type="quarter", target_id=q.id, target_name=q.label, message=f"Quarter {q.label} was generated and published", metadata={"year": q.year, "quarter": q.quarter, "participant_count": len(quarter_participants(db, q.id))})
         db.commit(); db.refresh(q)
         qlog("info", "Quarter generation complete: quarter_id=%s label=%s status=%s active=%s", q.id, q.label, q.status, q.is_active)
         return {"quarter": QuarterOut.model_validate(q), "plans": plan_rows(db, q.id), "validation": validation}
@@ -496,6 +501,7 @@ def publish_quarter(quarter_id: int, db: Session = Depends(get_db), admin: User 
     validation = validate_generated(quarter_id, db, admin)
     if not validation["valid"]: raise HTTPException(400, validation["errors"][0])
     _publish_quarter(db, q, admin)
+    add_audit_log(db, "quarter_published", actor=admin, target_type="quarter", target_id=q.id, target_name=q.label, message=f"Quarter {q.label} was published", metadata={"year": q.year, "quarter": q.quarter})
     db.commit(); db.refresh(q)
     return {"quarter": QuarterOut.model_validate(q), "plans": plan_rows(db, q.id)}
 
@@ -546,5 +552,7 @@ def detail(quarter_id: int, db: Session = Depends(get_db), admin: User = Depends
 def complete(quarter_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     q = db.get(Quarter, quarter_id)
     if not q: raise HTTPException(404, "Quarter not found")
-    q.is_active = False; q.is_completed = True; q.status = "completed"; db.commit()
+    q.is_active = False; q.is_completed = True; q.status = "completed"
+    add_audit_log(db, "quarter_completed", actor=admin, target_type="quarter", target_id=q.id, target_name=q.label, message=f"Quarter {q.label} was completed", metadata={"year": q.year, "quarter": q.quarter})
+    db.commit()
     return {"ok": True}

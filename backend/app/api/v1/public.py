@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import GivingPlan, Participant, ParticipantSlugRedirect, Quarter, QuarterParticipant
 from app.services.quarter_lookup import current_published_quarter
+from app.services.audit_service import add_audit_log
 
 router = APIRouter(prefix="/public", tags=["public"])
 
@@ -73,18 +74,26 @@ def public_tree_payload(db: Session, slug: str) -> dict:
 
 
 @router.get("/tree/{slug}")
-def public_tree_legacy(slug: str, response: Response, db: Session = Depends(get_db)):
+def public_tree_legacy(slug: str, request: Request, response: Response, db: Session = Depends(get_db)):
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     try:
-        return public_tree_payload(db, slug)
+        payload = public_tree_payload(db, slug)
+        participant = payload.get("participant", {}) if isinstance(payload, dict) else {}
+        add_audit_log(db, "public_link_viewed", target_type="participant", target_name=participant.get("display_name") or slug, message=f"Public link /tree/{slug} was viewed", metadata={"slug": slug, "status": payload.get("status") if isinstance(payload, dict) else None}, ip_address=request.client.host if request.client else None)
+        db.commit()
+        return payload
     except LookupError as exc:
         raise HTTPException(404, str(exc))
 
 
 @router.get("/{slug}")
-def public_tree(slug: str, response: Response, db: Session = Depends(get_db)):
+def public_tree(slug: str, request: Request, response: Response, db: Session = Depends(get_db)):
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     try:
-        return public_tree_payload(db, slug)
+        payload = public_tree_payload(db, slug)
+        participant = payload.get("participant", {}) if isinstance(payload, dict) else {}
+        add_audit_log(db, "public_link_viewed", target_type="participant", target_name=participant.get("display_name") or slug, message=f"Public link /{slug} was viewed", metadata={"slug": slug, "status": payload.get("status") if isinstance(payload, dict) else None}, ip_address=request.client.host if request.client else None)
+        db.commit()
+        return payload
     except LookupError as exc:
         raise HTTPException(404, str(exc))

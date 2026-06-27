@@ -118,3 +118,19 @@ def ensure_password_reset_schema(engine: Engine) -> None:
                 _create_index(conn, "password_reset_tokens", "ix_password_reset_tokens_token_hash", "token_hash", dialect)
                 _create_index(conn, "password_reset_tokens", "ix_password_reset_tokens_user_id", "user_id", dialect)
                 _create_index(conn, "password_reset_tokens", "ix_password_reset_tokens_expires_at", "expires_at", dialect)
+
+
+def ensure_audit_schema(engine: Engine) -> None:
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    if "audit_logs" in tables:
+        return
+    dialect = engine.dialect.name
+    pk = "INTEGER PRIMARY KEY AUTO_INCREMENT" if dialect == "mysql" else "INTEGER PRIMARY KEY"
+    with engine.begin() as conn:
+        conn.execute(text(f"CREATE TABLE audit_logs (id {pk}, event_type VARCHAR(80) NOT NULL, actor_user_id INTEGER NULL, actor_username VARCHAR(80) NULL, target_type VARCHAR(80) NULL, target_id INTEGER NULL, target_name VARCHAR(255) NULL, message VARCHAR(500) NOT NULL, metadata_json TEXT NULL, ip_address VARCHAR(80) NULL, created_at DATETIME NOT NULL)"))
+        _create_index(conn, "audit_logs", "ix_audit_logs_event_type", "event_type", dialect)
+        _create_index(conn, "audit_logs", "ix_audit_logs_actor_user_id", "actor_user_id", dialect)
+        _create_index(conn, "audit_logs", "ix_audit_logs_target_type", "target_type", dialect)
+        _create_index(conn, "audit_logs", "ix_audit_logs_target_id", "target_id", dialect)
+        _create_index(conn, "audit_logs", "ix_audit_logs_created_at", "created_at", dialect)

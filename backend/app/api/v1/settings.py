@@ -4,6 +4,9 @@ from app.runtime_config import access_settings, save_access_settings, smtp_setti
 from app.schemas.api import AccessSettingsIn, AccessSettingsOut, SmtpSettingsIn, SmtpSettingsOut, SmtpTestIn
 from app.services.email_service import send_email
 from app.services.auth_service import require_admin
+from app.services.audit_service import add_audit_log
+from app.database import get_db
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -14,8 +17,12 @@ def get_access_settings(admin: User = Depends(require_admin)):
 
 
 @router.patch("/access", response_model=AccessSettingsOut)
-def update_access_settings(data: AccessSettingsIn, admin: User = Depends(require_admin)):
-    return save_access_settings(data.model_dump(exclude_unset=True))
+def update_access_settings(data: AccessSettingsIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    payload = data.model_dump(exclude_unset=True)
+    updated = save_access_settings(payload)
+    add_audit_log(db, "access_settings_changed", actor=admin, target_type="settings", target_name="Access control", message="Access-control settings were changed", metadata=payload)
+    db.commit()
+    return updated
 
 
 @router.get("/smtp", response_model=SmtpSettingsOut)
@@ -24,12 +31,17 @@ def get_smtp_settings(admin: User = Depends(require_admin)):
 
 
 @router.patch("/smtp", response_model=SmtpSettingsOut)
-def update_smtp_settings(data: SmtpSettingsIn, admin: User = Depends(require_admin)):
+def update_smtp_settings(data: SmtpSettingsIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     payload = data.model_dump(exclude_unset=True)
     updated = {**smtp_settings(), **payload}
     if updated.get("use_ssl") and updated.get("use_tls"):
         raise HTTPException(400, "Choose either SSL or STARTTLS, not both")
-    return save_smtp_settings(payload)
+    saved = save_smtp_settings(payload)
+    audit_payload = {k: v for k, v in payload.items() if k != "password"}
+    if "password" in payload: audit_payload["password_changed"] = True
+    add_audit_log(db, "smtp_settings_changed", actor=admin, target_type="settings", target_name="SMTP", message="SMTP settings were changed", metadata=audit_payload)
+    db.commit()
+    return saved
 
 
 @router.post("/smtp/test")

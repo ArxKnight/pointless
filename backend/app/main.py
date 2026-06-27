@@ -12,10 +12,11 @@ from app.database import Base, SessionLocal, configure_engine
 from app.models import User
 from app.runtime_config import is_installed
 from app.services.auth_service import hash_password
+from app.services.audit_service import add_audit_log
 from app.services.participant_service import backfill_participants_from_department_members
-from app.services.schema_upgrade import ensure_team_schema, ensure_participant_schema, ensure_admin_schema, ensure_password_reset_schema
+from app.services.schema_upgrade import ensure_team_schema, ensure_participant_schema, ensure_admin_schema, ensure_password_reset_schema, ensure_audit_schema
 from app.services.access_control import access_decision, client_ip_from_headers
-from app.api.v1 import auth, members, quarters, plans, analytics, install, users, teams, participants, compatibility, public, invitations, settings as app_settings
+from app.api.v1 import auth, members, quarters, plans, install, users, teams, participants, compatibility, public, invitations, settings as app_settings, audit
 
 app = FastAPI(title="Pointless", description="Because patterns raise questions", version="1.0.0")
 logger = logging.getLogger("pointless.startup")
@@ -35,7 +36,6 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(members.router, prefix="/api")
 app.include_router(quarters.router, prefix="/api")
 app.include_router(plans.router, prefix="/api")
-app.include_router(analytics.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(teams.router, prefix="/api")  # legacy/deprecated; hidden from core workflow
 app.include_router(participants.router, prefix="/api")
@@ -43,6 +43,7 @@ app.include_router(compatibility.router, prefix="/api")
 app.include_router(public.router, prefix="/api")
 app.include_router(invitations.router, prefix="/api")
 app.include_router(app_settings.router, prefix="/api")
+app.include_router(audit.router, prefix="/api")
 
 FRONTEND_ROOT = Path("/usr/share/nginx/html")
 
@@ -65,10 +66,11 @@ def startup():
     ensure_participant_schema(engine)
     ensure_admin_schema(engine)
     ensure_password_reset_schema(engine)
+    ensure_audit_schema(engine)
     db = SessionLocal()
     try:
         if not db.query(User).first() and settings.first_admin_username and settings.first_admin_password:
-            db.add(User(
+            admin = User(
                 username=settings.first_admin_username,
                 display_name="Administrator",
                 email=settings.first_admin_email,
@@ -76,7 +78,10 @@ def startup():
                 is_admin=True,
                 is_super_admin=True,
                 is_active=True,
-            ))
+            )
+            db.add(admin)
+            db.flush()
+            add_audit_log(db, "admin_created", actor=admin, target_type="admin", target_id=admin.id, target_name=admin.username, message=f"Initial Admin {admin.username} was created from environment configuration")
             db.commit()
         backfill_participants_from_department_members(db)
         db.commit()

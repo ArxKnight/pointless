@@ -67,7 +67,6 @@ class QuarterOut(BaseModel):
 class PlanOut(BaseModel):
     id:int; quarter_id:int; from_member_id:int|None=None; to_member_id:int|None=None; from_participant_id:int|None=None; to_participant_id:int|None=None; from_name:str; to_name:str; amount:int; acknowledged:bool=False
 class GenerateIn(BaseModel): year:int|None=None; quarter:int|None=None; preview:bool=False; seed:int|None=None
-class OverviewOut(BaseModel): total_members:int; active_quarter:str|None; completion_rate:float; total_sent:int; total_planned:int
 class UserAdminOut(BaseModel):
     id:int; username:str; display_name:str; email:str; is_admin:bool; is_super_admin:bool=False; is_active:bool; created_at:datetime; last_login_at:datetime|None=None; team_id:int|None=None; team_name:str|None=None
     class Config: from_attributes=True
@@ -89,6 +88,21 @@ class AccessSettingsOut(BaseModel):
 class AccessSettingsIn(BaseModel):
     local_only_enabled:bool|None=None
     block_ans_network_enabled:bool|None=None
+
+
+class AuditLogOut(BaseModel):
+    id:int
+    event_type:str
+    actor_user_id:int|None=None
+    actor_username:str|None=None
+    target_type:str|None=None
+    target_id:int|None=None
+    target_name:str|None=None
+    message:str
+    metadata_json:str|None=None
+    ip_address:str|None=None
+    created_at:datetime
+    class Config: from_attributes=True
 
 class TeamGroupBase(BaseModel):
     name:str=Field(min_length=1, max_length=120)

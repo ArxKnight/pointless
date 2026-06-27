@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models import GivingPlan, Participant, QuarterParticipant, User
 from app.schemas.api import ParticipantBulkCreate, ParticipantBulkOut, ParticipantCreate, ParticipantOut, ParticipantUpdate
 from app.services.auth_service import require_admin
+from app.services.audit_service import add_audit_log
 from app.services.participant_service import bulk_create_participants, create_participant, update_participant_slug
 from app.services.quarter_lookup import current_published_quarter
 
@@ -50,6 +51,7 @@ def add_participant(data: ParticipantCreate, db: Session = Depends(get_db), admi
         p = create_participant(db, data.display_name, data.slug, data.notes, data.is_active)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    add_audit_log(db, "participant_created", actor=admin, target_type="participant", target_id=p.id, target_name=p.display_name, message=f"Participant {p.display_name} was created")
     db.commit(); db.refresh(p)
     return participant_out(db, p)
 
@@ -57,6 +59,8 @@ def add_participant(data: ParticipantCreate, db: Session = Depends(get_db), admi
 @router.post("/bulk", response_model=ParticipantBulkOut)
 def add_participants_bulk(data: ParticipantBulkCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     result = bulk_create_participants(db, data.names)
+    for p in result.created:
+        add_audit_log(db, "participant_created", actor=admin, target_type="participant", target_id=p.id, target_name=p.display_name, message=f"Participant {p.display_name} was created by bulk import")
     db.commit()
     created_count = len(result.created)
     duplicate_count = len(result.duplicates)
@@ -87,6 +91,8 @@ def update_participant(participant_id: int, data: ParticipantUpdate, db: Session
     if "slug" in values and values["slug"]:
         update_participant_slug(db, p, values["slug"])
     p.updated_at = datetime.utcnow()
+    event = "participant_deactivated" if values.get("is_active") is False else ("participant_reactivated" if values.get("is_active") is True else "participant_updated")
+    add_audit_log(db, event, actor=admin, target_type="participant", target_id=p.id, target_name=p.display_name, message=f"Participant {p.display_name} was updated", metadata=values)
     db.commit(); db.refresh(p)
     return participant_out(db, p)
 
@@ -95,7 +101,7 @@ def update_participant(participant_id: int, data: ParticipantUpdate, db: Session
 def deactivate_participant(participant_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     p = db.get(Participant, participant_id)
     if not p: raise HTTPException(404, "Participant not found")
-    p.is_active = False; p.updated_at = datetime.utcnow(); db.commit(); db.refresh(p)
+    p.is_active = False; p.updated_at = datetime.utcnow(); add_audit_log(db, "participant_deactivated", actor=admin, target_type="participant", target_id=p.id, target_name=p.display_name, message=f"Participant {p.display_name} was deactivated"); db.commit(); db.refresh(p)
     return participant_out(db, p)
 
 
@@ -103,7 +109,7 @@ def deactivate_participant(participant_id: int, db: Session = Depends(get_db), a
 def reactivate_participant(participant_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     p = db.get(Participant, participant_id)
     if not p: raise HTTPException(404, "Participant not found")
-    p.is_active = True; p.updated_at = datetime.utcnow(); db.commit(); db.refresh(p)
+    p.is_active = True; p.updated_at = datetime.utcnow(); add_audit_log(db, "participant_reactivated", actor=admin, target_type="participant", target_id=p.id, target_name=p.display_name, message=f"Participant {p.display_name} was reactivated"); db.commit(); db.refresh(p)
     return participant_out(db, p)
 
 
@@ -114,5 +120,6 @@ def delete_participant(participant_id: int, db: Session = Depends(get_db), admin
     used = db.query(GivingPlan).filter((GivingPlan.from_participant_id == p.id) | (GivingPlan.to_participant_id == p.id)).first() or db.query(QuarterParticipant).filter_by(participant_id=p.id).first()
     if used:
         raise HTTPException(409, "Participant has historical distribution data and cannot be deleted. Deactivate instead.")
+    add_audit_log(db, "participant_deleted", actor=admin, target_type="participant", target_id=p.id, target_name=p.display_name, message=f"Participant {p.display_name} was deleted")
     db.delete(p); db.commit()
     return {"ok": True}

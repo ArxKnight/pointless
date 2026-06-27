@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models import AdminInvitation, User
 from app.schemas.api import AdminInvitationAccept, AdminInvitationCreate
 from app.services.auth_service import hash_password, require_admin
+from app.services.audit_service import add_audit_log
 
 router = APIRouter(prefix="/admin-invitations", tags=["admin-invitations"])
 
@@ -94,7 +95,9 @@ def create_invitation(data: AdminInvitationCreate, db: Session = Depends(get_db)
         created_by_admin_id=admin.id,
         expires_at=expires_at,
     )
-    db.add(inv); db.commit(); db.refresh(inv)
+    db.add(inv); db.flush()
+    add_audit_log(db, "invite_created", actor=admin, target_type="admin_invitation", target_id=inv.id, target_name=inv.invitee_name, message=f"Admin invitation for {inv.invitee_name} was created", metadata={"expires_at": expires_at, "has_email": bool(inv.invitee_email)})
+    db.commit(); db.refresh(inv)
     return invitation_out(inv, db, raw_token)
 
 
@@ -107,7 +110,7 @@ def revoke_invitation(invitation_id: int, db: Session = Depends(get_db), admin: 
     if inv.used_at:
         raise HTTPException(400, "Used invitations cannot be revoked")
     if not inv.revoked_at:
-        inv.revoked_at = datetime.utcnow(); db.commit(); db.refresh(inv)
+        inv.revoked_at = datetime.utcnow(); add_audit_log(db, "invite_revoked", actor=admin, target_type="admin_invitation", target_id=inv.id, target_name=inv.invitee_name, message=f"Admin invitation for {inv.invitee_name} was revoked"); db.commit(); db.refresh(inv)
     return invitation_out(inv, db)
 
 
@@ -142,5 +145,7 @@ def accept_invitation(token: str, data: AdminInvitationAccept, db: Session = Dep
     )
     db.add(user); db.flush()
     inv.used_at = datetime.utcnow(); inv.used_by_admin_id = user.id
+    add_audit_log(db, "admin_created", actor=user, target_type="admin", target_id=user.id, target_name=user.username, message=f"Admin {user.username} was created from invitation")
+    add_audit_log(db, "invite_accepted", actor=user, target_type="admin_invitation", target_id=inv.id, target_name=inv.invitee_name, message=f"Admin invitation for {inv.invitee_name} was accepted")
     db.commit(); db.refresh(user)
     return {"message": "Administrator account created", "user": {"id": user.id, "username": user.username, "display_name": user.display_name, "email": user.email, "is_admin": user.is_admin, "is_super_admin": user.is_super_admin, "is_active": user.is_active}}

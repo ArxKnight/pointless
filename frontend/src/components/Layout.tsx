@@ -10,7 +10,7 @@ export function Layout({user,setUser}:{user:User;setUser:(u:null)=>void}){
   const links:[string,string][]=[
     ['/','◈ Dashboard'],
     ['/history','🕐 History'],
-    ...(user.is_admin?[['/participants','👥 Participants'],['/quarters','🥧 Manage Quarters']] as [string,string][]:[]),
+    ...(user.is_admin?[['/participants','👥 Participants'],['/quarters','🥧 Manage Quarters'],['/audit-log','📋 Audit Log']] as [string,string][]:[]),
     ['/settings','⚙️ Settings'],
   ];
 

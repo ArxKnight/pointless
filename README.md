@@ -20,7 +20,7 @@ Prebuilt single-container app image on Docker Hub:
 
 ```text
 arxknight/pointless:latest
-arxknight/pointless:0.5.2
+arxknight/pointless:0.5.3
 ```
 
 The app container includes Nginx serving the React frontend and FastAPI behind `/api`. MySQL remains a separate persistent database.
@@ -65,6 +65,7 @@ They are used only to manage the application:
 - quarters
 - generation
 - publishing
+- audit log review
 
 ### Distribution participants
 
@@ -90,7 +91,7 @@ Existing `department_members` records are preserved and backfilled into `partici
 
 ## Participant management
 
-Administrators can manage participants from **Settings → Participants**:
+Administrators can manage participants from **Participants** in the main navigation:
 
 - add one participant
 - paste a list of names
@@ -126,7 +127,19 @@ Compatibility is now represented with direct participant-to-participant rules:
 
 Rules are stored directionally so future one-way compatibility can be supported. The UI edits rules mutually by default.
 
-Administrators can use **Settings → Compatibility** to click matrix cells or bulk-allow a selected working group.
+Administrators can use the compatibility grid on **Participants** to click matrix cells or bulk-allow selected participants. Permanent teams and team groups are no longer shown in the main UI.
+
+## Audit log
+
+Administrators can review recent activity from **Audit Log** in the main navigation. The audit log records:
+
+- admin account creation, updates and deactivation
+- participant creation, updates, deletion and deactivation/reactivation
+- compatibility rule changes
+- quarter generation, publishing, completion and deletion
+- public link views, counted without requiring visitor identity
+- SMTP and access-control setting changes
+- admin invite creation, revocation and acceptance
 
 ## Quarters and publishing
 
@@ -197,13 +210,15 @@ Examples:
 /participant-f
 ```
 
-The public page shows only the participant's outgoing allocations for the current published quarter:
+The public page shows the participant's outgoing and incoming allocations for the current published quarter:
 
 - participant name
 - quarter label
 - recipient names
 - amount for each recipient
 - total allocated
+- sender names for incoming allocations
+- total incoming
 - mobile-friendly visual tree
 - printable layout
 
@@ -244,6 +259,7 @@ PATCH  /api/settings/access
 GET    /api/settings/smtp
 PATCH  /api/settings/smtp
 POST   /api/settings/smtp/test
+GET    /api/audit-logs
 POST   /api/auth/change-password
 POST   /api/auth/password-reset/request
 POST   /api/auth/password-reset/confirm
@@ -263,11 +279,13 @@ Alembic migration:
 
 ```text
 backend/alembic/versions/0003_participants.py
+backend/alembic/versions/0004_admin_invitations.py
+backend/alembic/versions/0005_audit_logs.py
 ```
 
-It adds participants, compatibility rules/groups, quarter participants, created/generating/published status fields, and participant allocation columns.
+It adds participants, compatibility rules/groups, quarter participants, created/generating/published status fields, admin invitations, audit logs, and participant allocation columns.
 
-Existing installs are also upgraded safely at startup with `ensure_participant_schema()` for deployments that rely on `Base.metadata.create_all()` instead of manually running Alembic.
+Existing installs are also upgraded safely at startup with `ensure_participant_schema()`, `ensure_admin_schema()`, `ensure_password_reset_schema()` and `ensure_audit_schema()` for deployments that rely on `Base.metadata.create_all()` instead of manually running Alembic.
 
 Migration behaviour:
 
