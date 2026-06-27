@@ -3,6 +3,7 @@ export type TeamGroup={id:number;name:string;description?:string|null;display_or
 export type User={id:number;username:string;display_name:string;email:string;is_admin:boolean;is_super_admin?:boolean;is_active?:boolean;team_id?:number|null};
 export type UserAdmin={id:number;username:string;display_name:string;email:string;is_admin:boolean;is_super_admin:boolean;is_active:boolean;created_at:string;last_login_at?:string|null;team_id?:number|null;team_name?:string|null};
 export type AccessSettings={local_only_enabled:boolean;block_ans_network_enabled:boolean};
+export type SmtpSettings={enabled:boolean;host:string;port:number;username:string;from_email:string;from_name:string;use_tls:boolean;use_ssl:boolean;password_set:boolean};
 export type Member={id:number;display_name:string;email:string;active:boolean;created_at:string};
 export type Quarter={id:number;year:number;quarter:number;label:string;generated_at:string;is_active:boolean;is_completed:boolean;status:string;published_at?:string|null};
 export type Plan={id:number;quarter_id:number;from_member_id?:number|null;to_member_id?:number|null;from_participant_id?:number|null;to_participant_id?:number|null;from_name:string;to_name:string;amount:number;acknowledged:boolean};

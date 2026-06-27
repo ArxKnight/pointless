@@ -13,6 +13,7 @@ import {Quarters} from './pages/Quarters';
 import {Participants} from './pages/Participants';
 import {Settings} from './pages/Settings';
 import {AdminInvite} from './pages/AdminInvite';
+import {ResetPassword} from './pages/ResetPassword';
 
 type InstallStatus={installed:boolean;database_configured:boolean};
 
@@ -40,6 +41,7 @@ export default function App(){
       <Routes>
         <Route path="tree/:slug" element={<MyTree/>}/>
         <Route path="admin-invite/:token" element={<AdminInvite/>}/>
+        <Route path="reset-password/:token" element={<ResetPassword/>}/>
         {!user ? (
           <>
             <Route path="login" element={<Login setUser={setUser}/>}/>

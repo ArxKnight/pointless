@@ -105,3 +105,16 @@ def ensure_admin_schema(engine: Engine) -> None:
             conn.execute(text("CREATE TABLE admin_invitations (id INTEGER PRIMARY KEY AUTO_INCREMENT, token_hash VARCHAR(128) NOT NULL UNIQUE, invitee_name VARCHAR(160) NOT NULL, invitee_email VARCHAR(255) NULL, created_by_admin_id INTEGER NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, used_at DATETIME NULL, used_by_admin_id INTEGER NULL, revoked_at DATETIME NULL)" if dialect == "mysql" else "CREATE TABLE IF NOT EXISTS admin_invitations (id INTEGER PRIMARY KEY, token_hash VARCHAR(128) NOT NULL UNIQUE, invitee_name VARCHAR(160) NOT NULL, invitee_email VARCHAR(255) NULL, created_by_admin_id INTEGER NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, used_at DATETIME NULL, used_by_admin_id INTEGER NULL, revoked_at DATETIME NULL)"))
             _create_index(conn, "admin_invitations", "ix_admin_invitations_token_hash", "token_hash", dialect)
             _create_index(conn, "admin_invitations", "ix_admin_invitations_created_by_admin_id", "created_by_admin_id", dialect)
+
+
+def ensure_password_reset_schema(engine: Engine) -> None:
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    dialect = engine.dialect.name
+    if "password_reset_tokens" not in tables:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE password_reset_tokens (id INTEGER PRIMARY KEY AUTO_INCREMENT, token_hash VARCHAR(128) NOT NULL UNIQUE, user_id INTEGER NOT NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, used_at DATETIME NULL, requested_ip VARCHAR(80) NULL, INDEX ix_password_reset_tokens_token_hash (token_hash), INDEX ix_password_reset_tokens_user_id (user_id), INDEX ix_password_reset_tokens_expires_at (expires_at))" if dialect == "mysql" else "CREATE TABLE IF NOT EXISTS password_reset_tokens (id INTEGER PRIMARY KEY, token_hash VARCHAR(128) NOT NULL UNIQUE, user_id INTEGER NOT NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, used_at DATETIME NULL, requested_ip VARCHAR(80) NULL)"))
+            if dialect != "mysql":
+                _create_index(conn, "password_reset_tokens", "ix_password_reset_tokens_token_hash", "token_hash", dialect)
+                _create_index(conn, "password_reset_tokens", "ix_password_reset_tokens_user_id", "user_id", dialect)
+                _create_index(conn, "password_reset_tokens", "ix_password_reset_tokens_expires_at", "expires_at", dialect)

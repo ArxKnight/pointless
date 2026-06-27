@@ -7,6 +7,7 @@ from .entities import (
     GivingPlan,
     Participant,
     ParticipantSlugRedirect,
+    PasswordResetToken,
     PointsLedger,
     Quarter,
     QuarterParticipant,

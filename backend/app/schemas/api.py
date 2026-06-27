@@ -5,6 +5,44 @@ HEX_COLOUR = r"^#[0-9A-Fa-f]{6}$"
 
 class LoginIn(BaseModel): username: str; password: str
 
+class PasswordChangeIn(BaseModel):
+    current_password:str
+    new_password:str=Field(min_length=8)
+
+class PasswordResetRequestIn(BaseModel):
+    username_or_email:str=Field(min_length=1)
+
+class PasswordResetConfirmIn(BaseModel):
+    token:str=Field(min_length=20)
+    new_password:str=Field(min_length=8)
+
+class SmtpSettingsOut(BaseModel):
+    enabled:bool=False
+    host:str=""
+    port:int=587
+    username:str=""
+    from_email:str=""
+    from_name:str="Pointless"
+    use_tls:bool=True
+    use_ssl:bool=False
+    password_set:bool=False
+
+class SmtpSettingsIn(BaseModel):
+    enabled:bool|None=None
+    host:str|None=None
+    port:int|None=Field(default=None, ge=1, le=65535)
+    username:str|None=None
+    password:str|None=None
+    clear_password:bool|None=None
+    from_email:EmailStr|None=None
+    from_name:str|None=None
+    use_tls:bool|None=None
+    use_ssl:bool|None=None
+
+class SmtpTestIn(BaseModel):
+    to_email:EmailStr
+
+
 class TeamGroupBrief(BaseModel):
     id:int; name:str; description:str|None=None; display_order:int; is_active:bool
     class Config: from_attributes=True

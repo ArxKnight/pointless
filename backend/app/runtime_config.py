@@ -69,6 +69,50 @@ def save_access_settings(access: dict) -> dict:
     return current
 
 
+
+def smtp_settings(include_password: bool = False) -> dict:
+    cfg = load_config()
+    smtp = cfg.get("smtp") or {}
+    enabled = bool(smtp.get("enabled", False))
+    host = smtp.get("host") or ""
+    username = smtp.get("username") or ""
+    password = smtp.get("password") or ""
+    result = {
+        "enabled": enabled and bool(host),
+        "host": host,
+        "port": int(smtp.get("port") or 587),
+        "username": username,
+        "from_email": smtp.get("from_email") or username,
+        "from_name": smtp.get("from_name") or "Pointless",
+        "use_tls": bool(smtp.get("use_tls", True)),
+        "use_ssl": bool(smtp.get("use_ssl", False)),
+        "password_set": bool(password),
+    }
+    if include_password:
+        result["password"] = password
+    return result
+
+
+def save_smtp_settings(smtp: dict) -> dict:
+    current = smtp_settings(include_password=True)
+    for key in ("enabled", "host", "port", "username", "from_email", "from_name", "use_tls", "use_ssl"):
+        if key in smtp:
+            value = smtp[key]
+            if isinstance(value, str):
+                value = value.strip()
+            current[key] = value
+    if smtp.get("password"):
+        current["password"] = smtp["password"]
+    if smtp.get("clear_password"):
+        current["password"] = ""
+    current["enabled"] = bool(current.get("enabled")) and bool(current.get("host"))
+    current["port"] = int(current.get("port") or 587)
+    cfg = load_config()
+    cfg["smtp"] = {k: v for k, v in current.items() if k != "password_set"}
+    _write_config(cfg)
+    return smtp_settings()
+
+
 def database_url() -> str | None:
     env_url = _env_database_url()
     if env_url:

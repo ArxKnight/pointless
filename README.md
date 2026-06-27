@@ -20,7 +20,7 @@ Prebuilt single-container app image on Docker Hub:
 
 ```text
 arxknight/pointless:latest
-arxknight/pointless:0.4.0
+arxknight/pointless:0.5.0
 ```
 
 The app container includes Nginx serving the React frontend and FastAPI behind `/api`. MySQL remains a separate persistent database.
@@ -228,8 +228,17 @@ POST   /api/quarters/generate-activate
 POST   /api/quarters/{id}/regenerate
 GET    /api/quarters/{id}
 DELETE /api/quarters/{id}
-GET    /api/quarters/{id}
+GET    /api/settings/access
+PATCH  /api/settings/access
+GET    /api/settings/smtp
+PATCH  /api/settings/smtp
+POST   /api/settings/smtp/test
+POST   /api/auth/change-password
+POST   /api/auth/password-reset/request
+POST   /api/auth/password-reset/confirm
 ```
+
+Password reset is available from the login page after an administrator configures **Settings → SMTP Settings**. Admins can also change their own password from **Settings → Administrators** while logged in.
 
 Public endpoint:
 

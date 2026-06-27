@@ -13,7 +13,7 @@ from app.models import User
 from app.runtime_config import is_installed
 from app.services.auth_service import hash_password
 from app.services.participant_service import backfill_participants_from_department_members
-from app.services.schema_upgrade import ensure_team_schema, ensure_participant_schema, ensure_admin_schema
+from app.services.schema_upgrade import ensure_team_schema, ensure_participant_schema, ensure_admin_schema, ensure_password_reset_schema
 from app.services.access_control import access_decision, client_ip_from_headers
 from app.api.v1 import auth, members, quarters, plans, analytics, install, users, teams, participants, compatibility, public, invitations, settings as app_settings
 
@@ -64,6 +64,7 @@ def startup():
     ensure_team_schema(engine)
     ensure_participant_schema(engine)
     ensure_admin_schema(engine)
+    ensure_password_reset_schema(engine)
     db = SessionLocal()
     try:
         if not db.query(User).first() and settings.first_admin_username and settings.first_admin_password:
