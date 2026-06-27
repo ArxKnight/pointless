@@ -1,6 +1,6 @@
 import {useEffect,useMemo,useState} from 'react';
 import {api} from '../lib/api';
-import {AuditLogEntry} from '../types/api';
+import {AuditLogEntry,UserAdmin} from '../types/api';
 
 function niceEvent(event:string){return event.replace(/_/g,' ').replace(/\b\w/g,(c:string)=>c.toUpperCase())}
 function formatDate(value:string){try{return new Date(value).toLocaleString()}catch{return value}}
@@ -8,9 +8,12 @@ function parseMetadata(value?:string|null){if(!value)return null;try{return JSON
 
 export function AuditLog(){
   const [entries,setEntries]=useState<AuditLogEntry[]>([]);
+  const [admins,setAdmins]=useState<UserAdmin[]>([]);
   const [error,setError]=useState('');
   const [filter,setFilter]=useState('');
-  useEffect(()=>{api<AuditLogEntry[]>('/audit-logs?limit=500').then(setEntries).catch(e=>setError(e.message))},[]);
+  const [actorUserId,setActorUserId]=useState('');
+  useEffect(()=>{api<UserAdmin[]>('/users').then(rows=>setAdmins(rows.filter(u=>u.is_admin))).catch(()=>setAdmins([]))},[]);
+  useEffect(()=>{const params=new URLSearchParams({limit:'500'});if(actorUserId)params.set('actor_user_id',actorUserId);api<AuditLogEntry[]>(`/audit-logs?${params.toString()}`).then(setEntries).catch(e=>setError(e.message))},[actorUserId]);
   const filtered=useMemo(()=>{const q=filter.trim().toLowerCase();if(!q)return entries;return entries.filter(e=>[e.event_type,e.actor_username,e.target_type,e.target_name,e.message,e.ip_address].filter(Boolean).join(' ').toLowerCase().includes(q))},[entries,filter]);
   if(error)return <div className="card p-6 text-red-400">{error}</div>;
   return <div className="space-y-6">
@@ -18,7 +21,7 @@ export function AuditLog(){
       <div><h1 className="text-3xl font-semibold tracking-tight">Audit Log</h1><p className="mt-1 text-slate-400">Admin activity, settings changes, generation events, invites, and public link views.</p></div>
       <div className="card px-4 py-3 text-sm text-slate-300"><b>{filtered.length}</b> events</div>
     </div>
-    <div className="card p-4"><input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Search event, admin, target, message, IP…" className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-indigo-400"/></div>
+    <div className="card grid gap-3 p-4 md:grid-cols-[260px_1fr]"><label className="text-sm text-slate-300">Admin user<select value={actorUserId} onChange={e=>setActorUserId(e.target.value)} className="mt-2 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-indigo-400"><option value="">All admins</option>{admins.map(u=><option key={u.id} value={u.id}>{u.username}</option>)}</select></label><label className="text-sm text-slate-300">Search<input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Search event, target, message, IP…" className="mt-2 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-indigo-400"/></label></div>
     <div className="card overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">

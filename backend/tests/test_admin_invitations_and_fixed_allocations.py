@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
-from app.models import CompatibilityRule, Participant, Quarter, QuarterParticipant, User, GivingPlan, AdminInvitation
+from app.models import CompatibilityRule, Participant, Quarter, QuarterParticipant, User, GivingPlan, AdminInvitation, AuditLog
 from app.services.auth_service import hash_password
 from app.services.participant_service import create_participant, bulk_create_participants
 from app.services.participant_generator import GenerationSettings, generate_distribution, validate_distribution, PERMITTED_AMOUNTS
@@ -15,6 +15,7 @@ from app.api.v1.participants import list_participants
 from app.api.v1.invitations import create_invitation, accept_invitation, list_invitations, revoke_invitation, public_invitation
 from app.api.v1.users import update_admin, delete_admin
 from app.api.v1.quarters import create_quarter, delete_quarter, list_quarters
+from app.api.v1.audit import list_audit_logs
 from app.schemas.api import AdminInvitationCreate, AdminInvitationAccept, UserAdminUpdate, QuarterCreateIn
 
 
@@ -162,6 +163,20 @@ def test_installer_admin_cannot_be_deleted_even_when_another_super_admin_exists(
     assert "cannot be deleted" in blocked.value.detail
     db.refresh(owner)
     assert owner.is_active is True
+
+
+def test_audit_log_can_filter_by_admin_actor(db):
+    owner = admin_user(db, "owner")
+    other = admin_user(db, "other")
+    db.add(AuditLog(event_type="admin_login", actor_user_id=owner.id, actor_username=owner.username, message="Owner logged in"))
+    db.add(AuditLog(event_type="admin_login", actor_user_id=other.id, actor_username=other.username, message="Other logged in"))
+    db.add(AuditLog(event_type="public_link_viewed", actor_user_id=None, actor_username=None, message="Public link viewed"))
+    db.commit()
+
+    rows = list_audit_logs(limit=20, actor_user_id=owner.id, db=db, admin=owner)
+
+    assert [row["actor_username"] for row in rows] == ["owner"]
+    assert rows[0]["message"] == "Owner logged in"
 
 
 def test_quarter_list_excludes_past_and_duplicate_create_requires_delete(db):

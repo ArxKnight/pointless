@@ -26,7 +26,10 @@ def audit_out(row: AuditLog) -> dict:
 
 
 @router.get("", response_model=list[AuditLogOut])
-def list_audit_logs(limit: int = 200, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def list_audit_logs(limit: int = 200, actor_user_id: int | None = None, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     limit = max(1, min(limit, 1000))
-    rows = db.query(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit).all()
+    query = db.query(AuditLog)
+    if actor_user_id is not None:
+        query = query.filter(AuditLog.actor_user_id == actor_user_id)
+    rows = query.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit).all()
     return [audit_out(row) for row in rows]
