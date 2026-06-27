@@ -54,6 +54,7 @@ export default function App(){
           </>
         ) : (
           <>
+            <Route path="login" element={<Navigate to="/" replace/>}/>
             <Route path=":slug" element={<MyTree/>}/>
             <Route element={<Layout user={user} setUser={setUser}/>}>
               <Route index element={<Dashboard user={user}/>}/>

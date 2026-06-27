@@ -17,7 +17,7 @@ export function Layout({user,setUser}:{user:User;setUser:(u:null)=>void}){
   return (
     <div className="min-h-screen bg-bg">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-border bg-surface/80 p-4 md:block">
-        <div className="mb-8"><img src={logo} alt="Pointless" className="h-auto w-44"/><p className="mt-2 text-xs text-slate-500">Because patterns raise questions</p></div>
+        <div className="mb-8 flex flex-col items-center"><img src={logo} alt="Pointless" className="h-auto w-44"/><p className="mt-2 text-center text-xs text-slate-500">Because patterns raise questions</p></div>
         <nav className="space-y-1">
           {links.map(([to,label])=>(
             <NavLink key={to} to={to} end={to==='/'} className={({isActive})=>`${item} block ${isActive?'bg-indigo-500/20 text-indigo-200':''}`}>{label}</NavLink>
