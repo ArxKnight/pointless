@@ -102,9 +102,14 @@ def ensure_admin_schema(engine: Engine) -> None:
                 _add_column(conn, "users", "last_login_at DATETIME NULL")
     if "admin_invitations" not in tables:
         with engine.begin() as conn:
-            conn.execute(text("CREATE TABLE admin_invitations (id INTEGER PRIMARY KEY AUTO_INCREMENT, token_hash VARCHAR(128) NOT NULL UNIQUE, invitee_name VARCHAR(160) NOT NULL, invitee_email VARCHAR(255) NULL, created_by_admin_id INTEGER NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, used_at DATETIME NULL, used_by_admin_id INTEGER NULL, revoked_at DATETIME NULL)" if dialect == "mysql" else "CREATE TABLE IF NOT EXISTS admin_invitations (id INTEGER PRIMARY KEY, token_hash VARCHAR(128) NOT NULL UNIQUE, invitee_name VARCHAR(160) NOT NULL, invitee_email VARCHAR(255) NULL, created_by_admin_id INTEGER NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, used_at DATETIME NULL, used_by_admin_id INTEGER NULL, revoked_at DATETIME NULL)"))
+            conn.execute(text("CREATE TABLE admin_invitations (id INTEGER PRIMARY KEY AUTO_INCREMENT, token_hash VARCHAR(128) NOT NULL UNIQUE, raw_token VARCHAR(255) NULL, invitee_name VARCHAR(160) NOT NULL, invitee_email VARCHAR(255) NULL, created_by_admin_id INTEGER NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, used_at DATETIME NULL, used_by_admin_id INTEGER NULL, revoked_at DATETIME NULL)" if dialect == "mysql" else "CREATE TABLE IF NOT EXISTS admin_invitations (id INTEGER PRIMARY KEY, token_hash VARCHAR(128) NOT NULL UNIQUE, raw_token VARCHAR(255) NULL, invitee_name VARCHAR(160) NOT NULL, invitee_email VARCHAR(255) NULL, created_by_admin_id INTEGER NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, used_at DATETIME NULL, used_by_admin_id INTEGER NULL, revoked_at DATETIME NULL)"))
             _create_index(conn, "admin_invitations", "ix_admin_invitations_token_hash", "token_hash", dialect)
             _create_index(conn, "admin_invitations", "ix_admin_invitations_created_by_admin_id", "created_by_admin_id", dialect)
+    elif "admin_invitations" in tables:
+        columns = {c["name"] for c in inspector.get_columns("admin_invitations")}
+        if "raw_token" not in columns:
+            with engine.begin() as conn:
+                _add_column(conn, "admin_invitations", "raw_token VARCHAR(255) NULL")
 
 
 def ensure_password_reset_schema(engine: Engine) -> None:

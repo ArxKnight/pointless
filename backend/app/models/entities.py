@@ -164,6 +164,7 @@ class AdminInvitation(Base):
     __tablename__ = "admin_invitations"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    raw_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     invitee_name: Mapped[str] = mapped_column(String(160))
     invitee_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by_admin_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)

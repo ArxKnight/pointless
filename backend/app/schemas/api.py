@@ -266,7 +266,7 @@ class AdminInvitationCreate(BaseModel):
         return None if value == "" else value
 
 class AdminInvitationOut(BaseModel):
-    id:int; invitee_name:str; invitee_email:str|None=None; created_by_admin_id:int|None=None; created_by_name:str|None=None; created_at:datetime; expires_at:datetime; used_at:datetime|None=None; revoked_at:datetime|None=None; status:str; expires_label:str|None=None
+    id:int; invitee_name:str; invitee_email:str|None=None; created_by_admin_id:int|None=None; created_by_name:str|None=None; created_at:datetime; expires_at:datetime; used_at:datetime|None=None; revoked_at:datetime|None=None; status:str; expires_label:str|None=None; invitation_url:str|None=None
 
 class AdminInvitationCreated(AdminInvitationOut):
     token:str

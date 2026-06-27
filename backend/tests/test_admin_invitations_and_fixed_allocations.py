@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request, Response
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -16,7 +16,8 @@ from app.api.v1.invitations import create_invitation, accept_invitation, list_in
 from app.api.v1.users import update_admin, delete_admin
 from app.api.v1.quarters import create_quarter, delete_quarter, list_quarters
 from app.api.v1.audit import list_audit_logs
-from app.schemas.api import AdminInvitationCreate, AdminInvitationAccept, UserAdminUpdate, QuarterCreateIn
+from app.api.v1.auth import login
+from app.schemas.api import AdminInvitationCreate, AdminInvitationAccept, UserAdminUpdate, QuarterCreateIn, LoginIn
 
 
 @pytest.fixture()
@@ -106,8 +107,10 @@ def test_main_admin_invitation_single_use_and_revocable(db):
     owner = admin_user(db)
     created = create_invitation(AdminInvitationCreate(invitee_name="Participant A", invitee_email="user_a@example.com", expires_in_hours=24), db, owner)
     assert created["invitation_url"].startswith("/admin-invite/")
-    assert "token" not in list_invitations(db, owner)[0]
-    assert "invitation_url" not in list_invitations(db, owner)[0]
+    listed = list_invitations(db, owner)[0]
+    assert "token" not in listed
+    assert listed["invitation_url"].startswith("/admin-invite/")
+    assert created["token"] in listed["invitation_url"]
     token = created["token"]
     public = public_invitation(token, db)
     assert public["invitee_name"] == "Participant A"
@@ -137,7 +140,7 @@ def test_admin_invitation_allows_blank_optional_email_and_returns_one_time_url(d
     listed = list_invitations(db, owner)[0]
     assert listed["invitee_email"] is None
     assert "token" not in listed
-    assert "invitation_url" not in listed
+    assert listed["invitation_url"].startswith("/admin-invite/")
 
 
 def test_last_active_super_admin_cannot_be_removed(db):
@@ -163,6 +166,19 @@ def test_installer_admin_cannot_be_deleted_even_when_another_super_admin_exists(
     assert "cannot be deleted" in blocked.value.detail
     db.refresh(owner)
     assert owner.is_active is True
+
+
+def test_admin_login_writes_audit_session_entry(db):
+    owner = admin_user(db, "owner")
+    request = Request({"type": "http", "headers": [], "client": ("127.0.0.1", 12345), "server": ("testserver", 80), "scheme": "http"})
+    response = Response()
+
+    result = login(LoginIn(username="owner", password="password123"), request, response, db)
+
+    assert result["user"].username == "owner"
+    rows = list_audit_logs(limit=20, actor_user_id=owner.id, db=db, admin=owner)
+    assert rows[0]["event_type"] == "admin_login"
+    assert rows[0]["ip_address"] == "127.0.0.1"
 
 
 def test_audit_log_can_filter_by_admin_actor(db):

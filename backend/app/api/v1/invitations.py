@@ -54,9 +54,11 @@ def invitation_out(inv: AdminInvitation, db: Session, include_token: str | None 
         "status": invitation_status(inv),
         "expires_label": "Never" if is_never_expiring(inv) else None,
     }
-    if include_token:
-        data["token"] = include_token
-        data["invitation_url"] = f"/admin-invite/{include_token}"
+    link_token = include_token or (inv.raw_token if invitation_status(inv) == "pending" else None)
+    if link_token:
+        if include_token:
+            data["token"] = include_token
+        data["invitation_url"] = f"/admin-invite/{link_token}"
     return data
 
 
@@ -90,6 +92,7 @@ def create_invitation(data: AdminInvitationCreate, db: Session = Depends(get_db)
     expires_at = datetime.utcnow() + (timedelta(days=365 * 100) if data.expires_in_hours == 0 else timedelta(hours=data.expires_in_hours))
     inv = AdminInvitation(
         token_hash=token_hash(raw_token),
+        raw_token=raw_token,
         invitee_name=data.invitee_name.strip(),
         invitee_email=str(data.invitee_email).lower() if data.invitee_email else None,
         created_by_admin_id=admin.id,
@@ -110,7 +113,7 @@ def revoke_invitation(invitation_id: int, db: Session = Depends(get_db), admin: 
     if inv.used_at:
         raise HTTPException(400, "Used invitations cannot be revoked")
     if not inv.revoked_at:
-        inv.revoked_at = datetime.utcnow(); add_audit_log(db, "invite_revoked", actor=admin, target_type="admin_invitation", target_id=inv.id, target_name=inv.invitee_name, message=f"Admin invitation for {inv.invitee_name} was revoked"); db.commit(); db.refresh(inv)
+        inv.revoked_at = datetime.utcnow(); inv.raw_token = None; add_audit_log(db, "invite_revoked", actor=admin, target_type="admin_invitation", target_id=inv.id, target_name=inv.invitee_name, message=f"Admin invitation for {inv.invitee_name} was revoked"); db.commit(); db.refresh(inv)
     return invitation_out(inv, db)
 
 
@@ -144,7 +147,7 @@ def accept_invitation(token: str, data: AdminInvitationAccept, db: Session = Dep
         is_active=True,
     )
     db.add(user); db.flush()
-    inv.used_at = datetime.utcnow(); inv.used_by_admin_id = user.id
+    inv.used_at = datetime.utcnow(); inv.used_by_admin_id = user.id; inv.raw_token = None
     add_audit_log(db, "admin_created", actor=user, target_type="admin", target_id=user.id, target_name=user.username, message=f"Admin {user.username} was created from invitation")
     add_audit_log(db, "invite_accepted", actor=user, target_type="admin_invitation", target_id=inv.id, target_name=inv.invitee_name, message=f"Admin invitation for {inv.invitee_name} was accepted")
     db.commit(); db.refresh(user)

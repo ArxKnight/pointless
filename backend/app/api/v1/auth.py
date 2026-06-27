@@ -11,6 +11,7 @@ from app.models import PasswordResetToken, User
 from app.schemas.api import LoginIn, PasswordChangeIn, PasswordResetConfirmIn, PasswordResetRequestIn, UserOut
 from app.services.auth_service import authenticate, create_access_token, get_current_user, hash_password, verify_password
 from app.services.email_service import send_password_reset_email, smtp_is_enabled
+from app.services.audit_service import add_audit_log
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 _attempts = defaultdict(deque)
@@ -40,6 +41,8 @@ def login(data: LoginIn, request: Request, response: Response, db: Session = Dep
         bucket.append(now); raise HTTPException(status_code=401, detail="Invalid username or password")
     token = create_access_token(user)
     user.last_login_at = datetime.utcnow()
+    if user.is_admin:
+        add_audit_log(db, "admin_login", actor=user, target_type="admin", target_id=user.id, target_name=user.username, message=f"Admin {user.username} logged in", ip_address=ip)
     db.commit()
     response.set_cookie("access_token", token, httponly=True, samesite="lax", secure=settings.cookie_secure, max_age=settings.access_token_expire_minutes*60)
     return {"user": UserOut.model_validate(user)}
