@@ -10,8 +10,18 @@ def config_path() -> Path:
     return Path(os.getenv("APP_CONFIG_PATH", DEFAULT_CONFIG_PATH))
 
 
+def _normalise_env_database_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    # Some PaaS MySQL add-ons expose mysql:// URLs. SQLAlchemy needs an
+    # explicit DBAPI driver when using PyMySQL.
+    if url.startswith("mysql://"):
+        return "mysql+pymysql://" + url.removeprefix("mysql://")
+    return url
+
+
 def _env_database_url() -> str | None:
-    return os.getenv("DATABASE_URL") or None
+    return _normalise_env_database_url(os.getenv("DATABASE_URL") or os.getenv("MYSQL_URL") or None)
 
 
 def is_installed() -> bool:
