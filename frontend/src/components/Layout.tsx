@@ -3,6 +3,7 @@ import {User} from '../types/api';
 import {post} from '../lib/api';
 
 const item='rounded-xl px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/5';
+const logo='/assets/branding/pointless_logo.png';
 
 export function Layout({user,setUser}:{user:User;setUser:(u:null)=>void}){
   const nav=useNavigate();
@@ -16,7 +17,7 @@ export function Layout({user,setUser}:{user:User;setUser:(u:null)=>void}){
   return (
     <div className="min-h-screen bg-bg">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-border bg-surface/80 p-4 md:block">
-        <div className="mb-8"><h1 className="text-xl font-bold tracking-tight">Pointless</h1><p className="mt-1 text-xs text-slate-500">Because patterns raise questions</p></div>
+        <div className="mb-8"><img src={logo} alt="Pointless" className="h-auto w-44"/><p className="mt-2 text-xs text-slate-500">Because patterns raise questions</p></div>
         <nav className="space-y-1">
           {links.map(([to,label])=>(
             <NavLink key={to} to={to} end={to==='/'} className={({isActive})=>`${item} block ${isActive?'bg-indigo-500/20 text-indigo-200':''}`}>{label}</NavLink>
@@ -25,7 +26,7 @@ export function Layout({user,setUser}:{user:User;setUser:(u:null)=>void}){
       </aside>
       <main className="pb-24 md:ml-64">
         <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-bg/80 p-4 backdrop-blur">
-          <p className="text-sm text-slate-400">Welcome, <span className="text-slate-100">{user.display_name}</span></p>
+          <div className="flex items-center gap-3"><img src={logo} alt="Pointless" className="h-8 w-auto md:hidden"/><p className="text-sm text-slate-400">Welcome, <span className="text-slate-100">{user.display_name}</span></p></div>
           <button onClick={async()=>{await post('/auth/logout');setUser(null);nav('/login');}} className="rounded-lg border border-border px-3 py-2 text-sm">Logout</button>
         </header>
         <div className="p-4 md:p-8"><Outlet/></div>
