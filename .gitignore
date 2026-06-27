@@ -28,3 +28,4 @@ app-config.json
 
 # Logs
 *.log
+.vercel
