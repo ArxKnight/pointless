@@ -20,7 +20,7 @@ Prebuilt single-container app image on Docker Hub:
 
 ```text
 arxknight/pointless:latest
-arxknight/pointless:0.5.0
+arxknight/pointless:0.5.1
 ```
 
 The app container includes Nginx serving the React frontend and FastAPI behind `/api`. MySQL remains a separate persistent database.
